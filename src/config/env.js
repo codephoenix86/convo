@@ -10,6 +10,7 @@ const environmentSchema = z.object({
     .trim()
     .min(1, 'is required')
     .refine(isPostgresUrl, 'must be a valid PostgreSQL URL'),
+  DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
 });
 
 loadLocalEnvironment();

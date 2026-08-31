@@ -26,7 +26,9 @@ function createReadinessHandler(database) {
         .set('Cache-Control', 'no-store')
         .status(200)
         .json({ status: 'ready', checks: { database: 'up' } });
-    } catch {
+    } catch (error) {
+      request.log?.error({ err: error }, 'Database readiness check failed');
+
       return response
         .set('Cache-Control', 'no-store')
         .status(503)

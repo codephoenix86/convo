@@ -1,17 +1,21 @@
 import { AppError, PayloadTooLargeError, ValidationError } from '../lib/errors.js';
 
 export function errorHandler(error, request, response, next) {
-  void request;
-
   if (response.headersSent) {
     return next(error);
   }
 
   const normalizedError = normalizeError(error);
+
+  if (!(error instanceof AppError) || normalizedError.statusCode >= 500) {
+    response.err = error instanceof Error ? error : normalizedError;
+  }
+
   const body = {
     error: {
       code: normalizedError.code,
       message: normalizedError.message,
+      requestId: request.id,
     },
   };
 
