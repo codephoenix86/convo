@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build and test output
+coverage/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Tool caches
+.eslintcache
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
