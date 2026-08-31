@@ -19,5 +19,8 @@
     "eslint": "10.9.1",
     "globals": "17.11.0",
     "prettier": "3.9.6"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
   }
 }
