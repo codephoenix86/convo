@@ -8,7 +8,13 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
-    "format:check": "prettier . --check"
+    "format:check": "prettier . --check",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:studio": "prisma studio"
   },
   "engines": {
     "node": ">=24.0.0 <25.0.0"
@@ -18,9 +24,13 @@
     "@eslint/js": "10.0.1",
     "eslint": "10.9.1",
     "globals": "17.11.0",
-    "prettier": "3.9.6"
+    "prettier": "3.9.6",
+    "prisma": "7.10.0"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "pg": "8.23.0",
     "zod": "4.5.4"
   }
 }
