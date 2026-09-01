@@ -49,10 +49,12 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 
 ## HTTP endpoints
 
-| Method | Path      | Purpose                                                 |
-| ------ | --------- | ------------------------------------------------------- |
-| GET    | `/health` | Process liveness; does not query dependencies.          |
-| GET    | `/ready`  | Readiness; returns `503` when PostgreSQL cannot answer. |
+| Method | Path             | Purpose                                                 |
+| ------ | ---------------- | ------------------------------------------------------- |
+| GET    | `/health`        | Process liveness; does not query dependencies.          |
+| GET    | `/ready`         | Readiness; returns `503` when PostgreSQL cannot answer. |
+| POST   | `/auth/register` | Create a user and authenticated refresh session.        |
+| POST   | `/auth/login`    | Authenticate by email/username and create a session.    |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 

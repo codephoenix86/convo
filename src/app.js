@@ -4,11 +4,18 @@ import { db } from './config/db.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
+import { createAuthRouter } from './modules/auth/auth.routes.js';
+import { authService } from './modules/auth/auth.service.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
 
 const JSON_BODY_LIMIT = '100kb';
 
-export function createApp({ database = db, registerRoutes, requestLogging = requestLogger } = {}) {
+export function createApp({
+  database = db,
+  authentication = authService,
+  registerRoutes,
+  requestLogging = requestLogger,
+} = {}) {
   const app = express();
 
   app.disable('x-powered-by');
@@ -17,6 +24,7 @@ export function createApp({ database = db, registerRoutes, requestLogging = requ
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
 
   app.use(createHealthRouter({ database }));
+  app.use('/auth', createAuthRouter({ authentication }));
 
   if (registerRoutes) {
     registerRoutes(app);
