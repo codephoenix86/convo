@@ -6,6 +6,7 @@ import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { authService } from './modules/auth/auth.service.js';
+import { verifyAccessToken } from './modules/auth/tokens.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
 
 const JSON_BODY_LIMIT = '100kb';
@@ -13,6 +14,7 @@ const JSON_BODY_LIMIT = '100kb';
 export function createApp({
   database = db,
   authentication = authService,
+  accessTokenVerifier = verifyAccessToken,
   registerRoutes,
   requestLogging = requestLogger,
 } = {}) {
@@ -24,7 +26,7 @@ export function createApp({
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
 
   app.use(createHealthRouter({ database }));
-  app.use('/auth', createAuthRouter({ authentication }));
+  app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier }));
 
   if (registerRoutes) {
     registerRoutes(app);

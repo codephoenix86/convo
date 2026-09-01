@@ -56,6 +56,30 @@ export function createAuthService({
     return buildAuthenticationResult(user, session.id, sessionDraft.refreshToken);
   }
 
+  async function refresh({ refreshToken }, metadata = {}) {
+    const sessionDraft = createSessionDraft(metadata);
+    const rotatedAt = new Date();
+    const result = await repository.rotateSession({
+      currentTokenHash: tokenManager.hashRefreshToken(refreshToken),
+      replacementSession: sessionDraft.storedSession,
+      rotatedAt,
+    });
+
+    if (!result) {
+      throw new UnauthorizedError('Invalid or expired refresh token');
+    }
+
+    return buildAuthenticationResult(result.user, result.session.id, sessionDraft.refreshToken);
+  }
+
+  async function logout({ userId, sessionId }) {
+    await repository.revokeSession({ userId, sessionId, revokedAt: new Date() });
+  }
+
+  async function logoutAll(userId) {
+    await repository.revokeAllSessions({ userId, revokedAt: new Date() });
+  }
+
   function createSessionDraft(metadata) {
     const refreshToken = tokenManager.generateRefreshToken();
 
@@ -85,7 +109,7 @@ export function createAuthService({
     };
   }
 
-  return { login, register };
+  return { login, logout, logoutAll, refresh, register };
 }
 
 function truncateOptional(value, maximumLength) {

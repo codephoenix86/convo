@@ -41,6 +41,59 @@ export function createAuthRepository(database = db) {
         },
       });
     },
+
+    async rotateSession({ currentTokenHash, replacementSession, rotatedAt }) {
+      return database.$transaction(async (transaction) => {
+        const currentSession = await transaction.refreshSession.findUnique({
+          where: { tokenHash: currentTokenHash },
+          include: { user: true },
+        });
+
+        if (
+          !currentSession ||
+          currentSession.revokedAt !== null ||
+          currentSession.expiresAt <= rotatedAt
+        ) {
+          return null;
+        }
+
+        const revocation = await transaction.refreshSession.updateMany({
+          where: {
+            id: currentSession.id,
+            revokedAt: null,
+            expiresAt: { gt: rotatedAt },
+          },
+          data: { revokedAt: rotatedAt },
+        });
+
+        if (revocation.count !== 1) {
+          return null;
+        }
+
+        const session = await transaction.refreshSession.create({
+          data: {
+            ...replacementSession,
+            userId: currentSession.userId,
+          },
+        });
+
+        return { user: currentSession.user, session };
+      });
+    },
+
+    revokeSession({ userId, sessionId, revokedAt }) {
+      return database.refreshSession.updateMany({
+        where: { id: sessionId, userId, revokedAt: null },
+        data: { revokedAt },
+      });
+    },
+
+    revokeAllSessions({ userId, revokedAt }) {
+      return database.refreshSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt },
+      });
+    },
   };
 }
 

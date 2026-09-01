@@ -38,3 +38,11 @@ export const loginBodySchema = z
     password: z.string().min(1).max(128),
   })
   .strict();
+
+export const refreshBodySchema = z
+  .object({
+    refreshToken: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{43}$/, 'Refresh token must be a valid opaque token'),
+  })
+  .strict();

@@ -28,6 +28,9 @@ function createAuthentication() {
   return {
     register: vi.fn(),
     login: vi.fn(),
+    refresh: vi.fn(),
+    logout: vi.fn(),
+    logoutAll: vi.fn(),
   };
 }
 
@@ -124,5 +127,90 @@ describe('POST /auth/login', () => {
       code: 'UNAUTHORIZED',
       message: 'Invalid email, username, or password',
     });
+  });
+});
+
+describe('POST /auth/refresh', () => {
+  it('accepts an opaque refresh token and returns a rotated token pair', async () => {
+    const authentication = createAuthentication();
+    authentication.refresh.mockResolvedValue(authenticationResult);
+    const refreshToken = 'r'.repeat(43);
+
+    const response = await request(createApp({ authentication }))
+      .post('/auth/refresh')
+      .send({ refreshToken })
+      .expect(200);
+
+    expect(authentication.refresh).toHaveBeenCalledWith(
+      { refreshToken },
+      expect.objectContaining({ ipAddress: expect.any(String) }),
+    );
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body.data.tokens).toEqual(authenticationResult.tokens);
+  });
+
+  it('rejects malformed refresh tokens before database-facing logic', async () => {
+    const authentication = createAuthentication();
+
+    const response = await request(createApp({ authentication }))
+      .post('/auth/refresh')
+      .send({ refreshToken: 'not-a-valid-token' })
+      .expect(400);
+
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(authentication.refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('authenticated logout endpoints', () => {
+  const claims = {
+    userId,
+    sessionId: randomUUID(),
+    tokenId: randomUUID(),
+  };
+
+  it('revokes the current session identified by a valid Bearer token', async () => {
+    const authentication = createAuthentication();
+    const accessTokenVerifier = vi.fn().mockResolvedValue(claims);
+
+    const response = await request(createApp({ authentication, accessTokenVerifier }))
+      .post('/auth/logout')
+      .set('authorization', 'Bearer valid-access-token')
+      .expect(204);
+
+    expect(accessTokenVerifier).toHaveBeenCalledWith('valid-access-token');
+    expect(authentication.logout).toHaveBeenCalledWith({
+      userId,
+      sessionId: claims.sessionId,
+    });
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('revokes every session for the authenticated user', async () => {
+    const authentication = createAuthentication();
+    const accessTokenVerifier = vi.fn().mockResolvedValue(claims);
+
+    await request(createApp({ authentication, accessTokenVerifier }))
+      .post('/auth/logout-all')
+      .set('authorization', 'Bearer valid-access-token')
+      .expect(204);
+
+    expect(authentication.logoutAll).toHaveBeenCalledWith(userId);
+  });
+
+  it('rejects missing or malformed Bearer credentials', async () => {
+    const authentication = createAuthentication();
+    const accessTokenVerifier = vi.fn();
+
+    const response = await request(createApp({ authentication, accessTokenVerifier }))
+      .post('/auth/logout')
+      .expect(401);
+
+    expect(response.body.error).toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: 'Invalid or missing access token',
+    });
+    expect(accessTokenVerifier).not.toHaveBeenCalled();
+    expect(authentication.logout).not.toHaveBeenCalled();
   });
 });

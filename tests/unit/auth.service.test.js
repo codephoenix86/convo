@@ -15,6 +15,9 @@ function createFixture() {
     createUserWithSession: vi.fn(),
     findUserByIdentifier: vi.fn(),
     createSession: vi.fn(),
+    rotateSession: vi.fn(),
+    revokeSession: vi.fn(),
+    revokeAllSessions: vi.fn(),
   };
   const passwordHasher = vi.fn().mockResolvedValue('stored-password-hash');
   const passwordVerifier = vi.fn();
@@ -164,5 +167,75 @@ describe('auth service login', () => {
     });
 
     expect(fixture.repository.createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('auth service session lifecycle', () => {
+  it('rotates a valid refresh token and never returns its stored hash', async () => {
+    const fixture = createFixture();
+    const storedUser = createStoredUser();
+    fixture.tokenManager.hashRefreshToken.mockImplementation((token) =>
+      token === 'presented-refresh-token' ? 'b'.repeat(64) : 'a'.repeat(64),
+    );
+    fixture.repository.rotateSession.mockResolvedValue({
+      user: storedUser,
+      session: { id: sessionId },
+    });
+
+    const result = await fixture.service.refresh(
+      { refreshToken: 'presented-refresh-token' },
+      { ipAddress: '127.0.0.1', userAgent: 'test-client' },
+    );
+
+    expect(fixture.repository.rotateSession).toHaveBeenCalledWith({
+      currentTokenHash: 'b'.repeat(64),
+      replacementSession: expect.objectContaining({
+        id: sessionId,
+        tokenHash: 'a'.repeat(64),
+        expiresAt,
+      }),
+      rotatedAt: expect.any(Date),
+    });
+    expect(result.tokens).toMatchObject({
+      accessToken: 'signed-access-token',
+      refreshToken: 'raw-refresh-token',
+    });
+    expect(JSON.stringify(result)).not.toContain('a'.repeat(64));
+    expect(JSON.stringify(result)).not.toContain('b'.repeat(64));
+  });
+
+  it('rejects an invalid, expired, or already-rotated refresh token generically', async () => {
+    const fixture = createFixture();
+    fixture.repository.rotateSession.mockResolvedValue(null);
+
+    await expect(
+      fixture.service.refresh({ refreshToken: 'presented-refresh-token' }),
+    ).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: 'Invalid or expired refresh token',
+    });
+  });
+
+  it('revokes the current session using signed access-token identity', async () => {
+    const fixture = createFixture();
+
+    await fixture.service.logout({ userId, sessionId });
+
+    expect(fixture.repository.revokeSession).toHaveBeenCalledWith({
+      userId,
+      sessionId,
+      revokedAt: expect.any(Date),
+    });
+  });
+
+  it('revokes every session owned by a user', async () => {
+    const fixture = createFixture();
+
+    await fixture.service.logoutAll(userId);
+
+    expect(fixture.repository.revokeAllSessions).toHaveBeenCalledWith({
+      userId,
+      revokedAt: expect.any(Date),
+    });
   });
 });
