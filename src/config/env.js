@@ -11,6 +11,13 @@ const environmentSchema = z.object({
     .min(1, 'is required')
     .refine(isPostgresUrl, 'must be a valid PostgreSQL URL'),
   DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
+  ACCESS_TOKEN_SECRET: z
+    .string({ error: 'is required' })
+    .min(32, 'must contain at least 32 characters'),
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  JWT_ISSUER: z.string().trim().min(1).max(100).default('convo-api'),
+  JWT_AUDIENCE: z.string().trim().min(1).max(100).default('convo-client'),
 });
 
 loadLocalEnvironment();

@@ -18,6 +18,16 @@ describe('environment configuration', () => {
     expect(result.stderr).toContain('DATABASE_URL: is required');
   });
 
+  it('fails fast when ACCESS_TOKEN_SECRET is missing', () => {
+    const environment = createEnvironment();
+    delete environment.ACCESS_TOKEN_SECRET;
+
+    const result = runEnvironmentImport(environment);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('ACCESS_TOKEN_SECRET: is required');
+  });
+
   it('normalizes valid configuration values', () => {
     const environment = createEnvironment({
       DATABASE_URL: 'postgresql://convo:convo@localhost:5432/convo_test',
@@ -33,6 +43,10 @@ describe('environment configuration', () => {
       PORT: 4321,
       LOG_LEVEL: 'silent',
       DATABASE_CONNECTION_TIMEOUT_MS: 500,
+      ACCESS_TOKEN_TTL_SECONDS: 900,
+      REFRESH_TOKEN_TTL_DAYS: 30,
+      JWT_ISSUER: 'convo-api-test',
+      JWT_AUDIENCE: 'convo-client-test',
     });
   });
 });
@@ -45,6 +59,11 @@ function createEnvironment(overrides = {}) {
     PORT: '3001',
     LOG_LEVEL: 'silent',
     DATABASE_CONNECTION_TIMEOUT_MS: '500',
+    ACCESS_TOKEN_SECRET: 'integration-test-access-token-secret-value',
+    ACCESS_TOKEN_TTL_SECONDS: '900',
+    REFRESH_TOKEN_TTL_DAYS: '30',
+    JWT_ISSUER: 'convo-api-test',
+    JWT_AUDIENCE: 'convo-client-test',
     ...overrides,
   };
 }

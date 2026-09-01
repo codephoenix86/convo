@@ -2,7 +2,7 @@
 
 A production-minded real-time chat backend built as a modular monolith with Node.js, Express, PostgreSQL, and Prisma. Socket.IO and Redis are planned for the real-time milestones.
 
-Milestone A currently provides the application foundation: validated configuration, PostgreSQL migrations, the User model, an Express server, health checks, structured logging, graceful shutdown, and foundation tests. Authentication and chat functionality are planned for later milestones.
+Milestone A provides the application foundation: validated configuration, PostgreSQL migrations, the User model, an Express server, health checks, structured logging, graceful shutdown, and foundation tests. Milestone B is in progress with the core chat schema and authentication cryptographic primitives; REST endpoints will follow in later commits.
 
 ## Requirements
 
@@ -84,11 +84,18 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 | `LOG_LEVEL`                      | Pino log threshold.                           |
 | `DATABASE_URL`                   | PostgreSQL connection URL.                    |
 | `DATABASE_CONNECTION_TIMEOUT_MS` | Database connection timeout from 100–30000ms. |
+| `ACCESS_TOKEN_SECRET`            | Secret of at least 32 characters for JWTs.    |
+| `ACCESS_TOKEN_TTL_SECONDS`       | Access-token lifetime from 60–3600 seconds.   |
+| `REFRESH_TOKEN_TTL_DAYS`         | Refresh-session lifetime from 1–90 days.      |
+| `JWT_ISSUER`                     | Expected access-token issuer.                 |
+| `JWT_AUDIENCE`                   | Expected access-token audience.               |
 
 ## Operational behavior
 
 - Logs are newline-delimited JSON suitable for collection by a deployment platform.
 - Authorization, cookies, tokens, and common credential fields are redacted from structured objects.
 - Request bodies are not logged.
+- Passwords use salted Argon2id hashes; opaque refresh tokens are stored only as SHA-256 hashes.
+- Access JWTs are signed with HS256 and restricted to the configured issuer, audience, and lifetime.
 - `SIGINT` and `SIGTERM` stop accepting requests, close the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.
