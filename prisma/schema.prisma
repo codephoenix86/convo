@@ -9,6 +9,22 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum ConversationRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MessageType {
+  TEXT
+  SYSTEM
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   username     String   @unique(map: "users_username_key") @db.VarChar(32)
@@ -18,5 +34,91 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  refreshSessions      RefreshSession[]
+  createdConversations Conversation[]       @relation("ConversationCreator")
+  conversationMembers  ConversationMember[]
+  messages             Message[]            @relation("MessageSender")
+
   @@map("users")
+}
+
+model RefreshSession {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique(map: "refresh_sessions_token_hash_key") @map("token_hash") @db.Char(64)
+  userAgent String?   @map("user_agent") @db.VarChar(512)
+  ipAddress String?   @map("ip_address") @db.VarChar(45)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "refresh_sessions_user_id_idx")
+  @@index([expiresAt], map: "refresh_sessions_expires_at_idx")
+  @@map("refresh_sessions")
+}
+
+model Conversation {
+  id          String           @id @default(uuid()) @db.Uuid
+  type        ConversationType
+  directKey   String?          @unique(map: "conversations_direct_key_key") @map("direct_key") @db.VarChar(73)
+  name        String?          @db.VarChar(100)
+  imageUrl    String?          @map("image_url") @db.VarChar(2048)
+  createdById String           @map("created_by_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User                 @relation("ConversationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  members   ConversationMember[]
+  messages  Message[]
+
+  @@index([createdById], map: "conversations_created_by_id_idx")
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId    String           @map("conversation_id") @db.Uuid
+  userId            String           @map("user_id") @db.Uuid
+  role              ConversationRole @default(MEMBER)
+  joinedAt          DateTime         @default(now()) @map("joined_at") @db.Timestamptz(3)
+  lastReadMessageId String?          @map("last_read_message_id") @db.Uuid
+  lastReadAt        DateTime?        @map("last_read_at") @db.Timestamptz(3)
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage Message?     @relation("MemberLastReadMessage", fields: [conversationId, lastReadMessageId], references: [conversationId, id], onDelete: NoAction)
+
+  @@id([conversationId, userId], map: "conversation_members_pkey")
+  @@index([userId, conversationId], map: "conversation_members_user_id_conversation_id_idx")
+  @@index([conversationId, lastReadMessageId], map: "conversation_members_last_read_message_idx")
+  @@map("conversation_members")
+}
+
+model Message {
+  id              String      @id @default(uuid()) @db.Uuid
+  conversationId  String      @map("conversation_id") @db.Uuid
+  senderId        String      @map("sender_id") @db.Uuid
+  clientMessageId String      @map("client_message_id") @db.Uuid
+  body            String      @db.Text
+  type            MessageType @default(TEXT)
+  replyToId       String?     @map("reply_to_id") @db.Uuid
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  editedAt        DateTime?   @map("edited_at") @db.Timestamptz(3)
+  deletedAt       DateTime?   @map("deleted_at") @db.Timestamptz(3)
+
+  conversation Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+  replyTo      Message?             @relation("MessageReplies", fields: [conversationId, replyToId], references: [conversationId, id], onDelete: NoAction)
+  replies      Message[]            @relation("MessageReplies")
+  lastReadBy   ConversationMember[] @relation("MemberLastReadMessage")
+
+  @@unique([conversationId, id], map: "messages_conversation_id_id_key")
+  @@unique([senderId, conversationId, clientMessageId], map: "messages_sender_conversation_client_id_key")
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)], map: "messages_history_idx")
+  @@index([conversationId, replyToId], map: "messages_reply_to_idx")
+  @@index([senderId], map: "messages_sender_id_idx")
+  @@map("messages")
 }
