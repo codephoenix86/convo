@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { NotFoundError } from '../../src/lib/errors.js';
+import { ConflictError, NotFoundError } from '../../src/lib/errors.js';
 import { createConversationsRepository } from '../../src/modules/conversations/conversations.repository.js';
 
 const userId = randomUUID();
@@ -212,5 +212,88 @@ describe('conversations repository', () => {
         message: 'Conversation not found',
       }),
     );
+  });
+
+  it('adds a member only while the actor still has an allowed role', async () => {
+    const updatedGroup = { id: conversationId, type: 'GROUP' };
+    const transaction = {
+      user: { findUnique: vi.fn().mockResolvedValue({ id: participantId }) },
+      conversation: { update: vi.fn().mockResolvedValue(updatedGroup) },
+    };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
+    const repository = createConversationsRepository(database);
+
+    await repository.addGroupMember({
+      conversationId,
+      actorId: userId,
+      actorRoles: ['OWNER', 'ADMIN'],
+      userId: participantId,
+      role: 'MEMBER',
+    });
+
+    expect(transaction.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: conversationId,
+          type: 'GROUP',
+          members: { some: { userId, role: { in: ['OWNER', 'ADMIN'] } } },
+        },
+        data: { members: { create: { userId: participantId, role: 'MEMBER' } } },
+      }),
+    );
+  });
+
+  it('removes a member only if actor and target roles still match authorization', async () => {
+    const database = {
+      conversation: { update: vi.fn().mockResolvedValue({ id: conversationId }) },
+    };
+    const repository = createConversationsRepository(database);
+
+    await repository.removeGroupMember({
+      conversationId,
+      actorId: userId,
+      actorRoles: ['OWNER'],
+      userId: participantId,
+      targetRole: 'ADMIN',
+    });
+
+    expect(database.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: conversationId,
+          type: 'GROUP',
+          AND: [
+            { members: { some: { userId, role: { in: ['OWNER'] } } } },
+            { members: { some: { userId: participantId, role: 'ADMIN' } } },
+          ],
+        },
+        data: {
+          members: {
+            delete: {
+              conversationId_userId: { conversationId, userId: participantId },
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  it('maps duplicate membership insertion to a conflict', async () => {
+    const transaction = {
+      user: { findUnique: vi.fn().mockResolvedValue({ id: participantId }) },
+      conversation: { update: vi.fn().mockRejectedValue({ code: 'P2002' }) },
+    };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
+    const repository = createConversationsRepository(database);
+
+    await expect(
+      repository.addGroupMember({
+        conversationId,
+        actorId: userId,
+        actorRoles: ['OWNER'],
+        userId: participantId,
+        role: 'MEMBER',
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 });

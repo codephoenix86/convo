@@ -136,7 +136,14 @@ describe('conversations service', () => {
 
   it('delegates authorized group metadata updates to an atomic repository write', async () => {
     const updatedGroup = createConversation({ type: 'GROUP', name: 'Renamed Team' });
-    const repository = { updateGroup: vi.fn().mockResolvedValue(updatedGroup) };
+    const repository = {
+      findAccessContext: vi.fn().mockResolvedValue({
+        id: conversationId,
+        type: 'GROUP',
+        members: [{ userId: firstUserId, role: 'OWNER' }],
+      }),
+      updateGroup: vi.fn().mockResolvedValue(updatedGroup),
+    };
     const service = createConversationsService(repository);
 
     const result = await service.updateGroup(firstUserId, conversationId, {

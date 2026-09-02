@@ -22,6 +22,37 @@ export function createConversationsController(conversations) {
       return response.status(200).json({ data: { conversation } });
     },
 
+    async addMember(request, response) {
+      const conversation = await conversations.addMember(
+        request.user.id,
+        request.validated.params.id,
+        request.body,
+      );
+
+      return response.status(201).json({ data: { conversation } });
+    },
+
+    async removeMember(request, response) {
+      await conversations.removeMember(
+        request.user.id,
+        request.validated.params.id,
+        request.validated.params.userId,
+      );
+
+      return response.status(204).send();
+    },
+
+    async updateMemberRole(request, response) {
+      const conversation = await conversations.updateMemberRole(
+        request.user.id,
+        request.validated.params.id,
+        request.validated.params.userId,
+        request.body.role,
+      );
+
+      return response.status(200).json({ data: { conversation } });
+    },
+
     async list(request, response) {
       const result = await conversations.list(request.user.id, {
         cursor: request.validated.query.cursor,

@@ -37,6 +37,9 @@ function createConversations() {
     createDirect: vi.fn(),
     createGroup: vi.fn(),
     updateGroup: vi.fn(),
+    addMember: vi.fn(),
+    removeMember: vi.fn(),
+    updateMemberRole: vi.fn(),
     list: vi.fn(),
   };
 }
@@ -222,5 +225,88 @@ describe('PATCH /conversations/:id', () => {
       .expect(400);
 
     expect(conversations.updateGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe('group membership endpoints', () => {
+  it('adds a member with an explicit allowed role', async () => {
+    const conversations = createConversations();
+    conversations.addMember.mockResolvedValue({ ...conversation, type: 'GROUP' });
+
+    const response = await request(createAuthenticatedApp(conversations))
+      .post(`/conversations/${conversationId}/members`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ userId: participantId, role: 'ADMIN' })
+      .expect(201);
+
+    expect(conversations.addMember).toHaveBeenCalledWith(userId, conversationId, {
+      userId: participantId,
+      role: 'ADMIN',
+    });
+    expect(response.body.data.conversation.type).toBe('GROUP');
+  });
+
+  it('defaults newly added users to the member role', async () => {
+    const conversations = createConversations();
+    conversations.addMember.mockResolvedValue({ ...conversation, type: 'GROUP' });
+
+    await request(createAuthenticatedApp(conversations))
+      .post(`/conversations/${conversationId}/members`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ userId: participantId })
+      .expect(201);
+
+    expect(conversations.addMember).toHaveBeenCalledWith(userId, conversationId, {
+      userId: participantId,
+      role: 'MEMBER',
+    });
+  });
+
+  it('removes a role-authorized member', async () => {
+    const conversations = createConversations();
+
+    await request(createAuthenticatedApp(conversations))
+      .delete(`/conversations/${conversationId}/members/${participantId}`)
+      .set('authorization', 'Bearer valid-access-token')
+      .expect(204);
+
+    expect(conversations.removeMember).toHaveBeenCalledWith(userId, conversationId, participantId);
+  });
+
+  it('promotes or demotes a member using the dedicated role endpoint', async () => {
+    const conversations = createConversations();
+    conversations.updateMemberRole.mockResolvedValue({ ...conversation, type: 'GROUP' });
+
+    await request(createAuthenticatedApp(conversations))
+      .patch(`/conversations/${conversationId}/members/${participantId}`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ role: 'ADMIN' })
+      .expect(200);
+
+    expect(conversations.updateMemberRole).toHaveBeenCalledWith(
+      userId,
+      conversationId,
+      participantId,
+      'ADMIN',
+    );
+  });
+
+  it('rejects the owner role and malformed member IDs before service logic', async () => {
+    const conversations = createConversations();
+    const app = createAuthenticatedApp(conversations);
+    const authorization = { authorization: 'Bearer valid-access-token' };
+
+    await request(app)
+      .post(`/conversations/${conversationId}/members`)
+      .set(authorization)
+      .send({ userId: participantId, role: 'OWNER' })
+      .expect(400);
+    await request(app)
+      .delete(`/conversations/${conversationId}/members/not-a-uuid`)
+      .set(authorization)
+      .expect(400);
+
+    expect(conversations.addMember).not.toHaveBeenCalled();
+    expect(conversations.removeMember).not.toHaveBeenCalled();
   });
 });

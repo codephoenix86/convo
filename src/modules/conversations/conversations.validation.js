@@ -36,6 +36,26 @@ export const conversationIdParamsSchema = z
   })
   .strict();
 
+export const conversationMemberParamsSchema = z
+  .object({
+    id: z.uuid(),
+    userId: z.uuid(),
+  })
+  .strict();
+
+export const addConversationMemberBodySchema = z
+  .object({
+    userId: z.uuid(),
+    role: z.enum(['ADMIN', 'MEMBER']).default('MEMBER'),
+  })
+  .strict();
+
+export const updateConversationMemberRoleBodySchema = z
+  .object({
+    role: z.enum(['ADMIN', 'MEMBER']),
+  })
+  .strict();
+
 export const updateGroupConversationBodySchema = z
   .object({
     name: groupNameSchema.optional(),

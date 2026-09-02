@@ -4,10 +4,13 @@ import { createAccessTokenAuthenticator } from '../../middleware/authenticate.js
 import { validateBody, validateParams, validateQuery } from '../../middleware/validate.js';
 import { createConversationsController } from './conversations.controller.js';
 import {
+  addConversationMemberBodySchema,
   conversationIdParamsSchema,
+  conversationMemberParamsSchema,
   createDirectConversationBodySchema,
   createGroupConversationBodySchema,
   listConversationsQuerySchema,
+  updateConversationMemberRoleBodySchema,
   updateGroupConversationBodySchema,
 } from './conversations.validation.js';
 
@@ -20,6 +23,23 @@ export function createConversationsRouter({ conversations, accessTokenVerifier }
   router.post('/direct', validateBody(createDirectConversationBodySchema), controller.createDirect);
   router.post('/group', validateBody(createGroupConversationBodySchema), controller.createGroup);
   router.get('/', validateQuery(listConversationsQuerySchema), controller.list);
+  router.post(
+    '/:id/members',
+    validateParams(conversationIdParamsSchema),
+    validateBody(addConversationMemberBodySchema),
+    controller.addMember,
+  );
+  router.delete(
+    '/:id/members/:userId',
+    validateParams(conversationMemberParamsSchema),
+    controller.removeMember,
+  );
+  router.patch(
+    '/:id/members/:userId',
+    validateParams(conversationMemberParamsSchema),
+    validateBody(updateConversationMemberRoleBodySchema),
+    controller.updateMemberRole,
+  );
   router.patch(
     '/:id',
     validateParams(conversationIdParamsSchema),

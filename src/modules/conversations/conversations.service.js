@@ -2,6 +2,13 @@ import { z } from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../lib/cursor.js';
 import { ValidationError } from '../../lib/errors.js';
+import {
+  allowedRolesForAdding,
+  GROUP_MANAGER_ROLES,
+  requireGroupRole,
+  requireMemberRemovalPermission,
+  requireRoleChangePermission,
+} from './conversation-access.js';
 import { conversationsRepository } from './conversations.repository.js';
 
 const conversationListCursorSchema = z
@@ -48,7 +55,53 @@ export function createConversationsService(repository) {
     },
 
     async updateGroup(actorId, conversationId, changes) {
+      const context = await repository.findAccessContext(conversationId, [actorId]);
+      requireGroupRole(context, actorId, GROUP_MANAGER_ROLES);
       const conversation = await repository.updateGroup({ conversationId, actorId, changes });
+
+      return formatConversation(conversation);
+    },
+
+    async addMember(actorId, conversationId, { userId, role }) {
+      const context = await repository.findAccessContext(conversationId, [actorId]);
+      const actorRoles = allowedRolesForAdding(role);
+      requireGroupRole(context, actorId, actorRoles);
+      const conversation = await repository.addGroupMember({
+        conversationId,
+        actorId,
+        actorRoles,
+        userId,
+        role,
+      });
+
+      return formatConversation(conversation);
+    },
+
+    async removeMember(actorId, conversationId, userId) {
+      const context = await repository.findAccessContext(conversationId, [actorId, userId]);
+      const { actor, target } = requireMemberRemovalPermission(context, actorId, userId);
+      const actorRoles = actor.role === 'OWNER' ? ['OWNER'] : ['ADMIN'];
+
+      await repository.removeGroupMember({
+        conversationId,
+        actorId,
+        actorRoles,
+        userId,
+        targetRole: target.role,
+      });
+    },
+
+    async updateMemberRole(actorId, conversationId, userId, role) {
+      const context = await repository.findAccessContext(conversationId, [actorId, userId]);
+      const { target } = requireRoleChangePermission(context, actorId, userId);
+      const conversation = await repository.updateGroupMemberRole({
+        conversationId,
+        actorId,
+        actorRoles: ['OWNER'],
+        userId,
+        currentRole: target.role,
+        role,
+      });
 
       return formatConversation(conversation);
     },

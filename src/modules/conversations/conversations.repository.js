@@ -1,5 +1,5 @@
 import { db } from '../../config/db.js';
-import { NotFoundError } from '../../lib/errors.js';
+import { ConflictError, NotFoundError } from '../../lib/errors.js';
 
 const userSummarySelect = Object.freeze({
   id: true,
@@ -35,6 +35,20 @@ const conversationInclude = Object.freeze({
 
 export function createConversationsRepository(database = db) {
   return {
+    findAccessContext(conversationId, userIds) {
+      return database.conversation.findUnique({
+        where: { id: conversationId },
+        select: {
+          id: true,
+          type: true,
+          members: {
+            where: { userId: { in: [...new Set(userIds)] } },
+            select: { userId: true, role: true },
+          },
+        },
+      });
+    },
+
     createOrGetDirect({ creatorId, participantId, directKey }) {
       return database.$transaction(async (transaction) => {
         const participant = await transaction.user.findUnique({
@@ -119,6 +133,109 @@ export function createConversationsRepository(database = db) {
       }
     },
 
+    async addGroupMember({ conversationId, actorId, actorRoles, userId, role }) {
+      try {
+        return await database.$transaction(async (transaction) => {
+          const user = await transaction.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
+          });
+
+          if (!user) {
+            throw new NotFoundError('User not found');
+          }
+
+          return transaction.conversation.update({
+            where: {
+              id: conversationId,
+              type: 'GROUP',
+              members: {
+                some: { userId: actorId, role: { in: actorRoles } },
+              },
+            },
+            data: {
+              members: { create: { userId, role } },
+            },
+            include: conversationInclude,
+          });
+        });
+      } catch (error) {
+        if (isUniqueConstraintError(error)) {
+          throw new ConflictError('User is already a conversation member');
+        }
+
+        if (isRecordNotFoundError(error)) {
+          throw new NotFoundError('Conversation not found');
+        }
+
+        throw error;
+      }
+    },
+
+    async removeGroupMember({ conversationId, actorId, actorRoles, userId, targetRole }) {
+      try {
+        return await database.conversation.update({
+          where: {
+            id: conversationId,
+            type: 'GROUP',
+            AND: [
+              { members: { some: { userId: actorId, role: { in: actorRoles } } } },
+              { members: { some: { userId, role: targetRole } } },
+            ],
+          },
+          data: {
+            members: {
+              delete: { conversationId_userId: { conversationId, userId } },
+            },
+          },
+          include: conversationInclude,
+        });
+      } catch (error) {
+        if (isRecordNotFoundError(error)) {
+          throw new NotFoundError('Conversation member not found');
+        }
+
+        throw error;
+      }
+    },
+
+    async updateGroupMemberRole({
+      conversationId,
+      actorId,
+      actorRoles,
+      userId,
+      currentRole,
+      role,
+    }) {
+      try {
+        return await database.conversation.update({
+          where: {
+            id: conversationId,
+            type: 'GROUP',
+            AND: [
+              { members: { some: { userId: actorId, role: { in: actorRoles } } } },
+              { members: { some: { userId, role: currentRole } } },
+            ],
+          },
+          data: {
+            members: {
+              update: {
+                where: { conversationId_userId: { conversationId, userId } },
+                data: { role },
+              },
+            },
+          },
+          include: conversationInclude,
+        });
+      } catch (error) {
+        if (isRecordNotFoundError(error)) {
+          throw new NotFoundError('Conversation member not found');
+        }
+
+        throw error;
+      }
+    },
+
     async listForUser({ userId, cursor, limit }) {
       const cursorFilter = cursor
         ? {
@@ -171,6 +288,10 @@ export function createConversationsRepository(database = db) {
 
 function isRecordNotFoundError(error) {
   return error !== null && typeof error === 'object' && error.code === 'P2025';
+}
+
+function isUniqueConstraintError(error) {
+  return error !== null && typeof error === 'object' && error.code === 'P2002';
 }
 
 export const conversationsRepository = createConversationsRepository();
