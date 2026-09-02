@@ -2,8 +2,8 @@ import { ForbiddenError, NotFoundError } from '../../lib/errors.js';
 
 export const GROUP_MANAGER_ROLES = Object.freeze(['OWNER', 'ADMIN']);
 
-export function requireGroupMember(context, userId) {
-  if (!context || context.type !== 'GROUP') {
+export function requireConversationMember(context, userId) {
+  if (!context) {
     throw new NotFoundError('Conversation not found');
   }
 
@@ -14,6 +14,14 @@ export function requireGroupMember(context, userId) {
   }
 
   return membership;
+}
+
+export function requireGroupMember(context, userId) {
+  if (context?.type !== 'GROUP') {
+    throw new NotFoundError('Conversation not found');
+  }
+
+  return requireConversationMember(context, userId);
 }
 
 export function requireGroupRole(context, userId, allowedRoles) {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ForbiddenError, NotFoundError } from '../../src/lib/errors.js';
 import {
   allowedRolesForAdding,
+  requireConversationMember,
   requireGroupMember,
   requireGroupRole,
   requireMemberRemovalPermission,
@@ -22,6 +23,13 @@ const context = {
 };
 
 describe('centralized group access rules', () => {
+  it('authorizes members of both direct and group conversations', () => {
+    const directContext = { type: 'DIRECT', members: [{ userId: memberId, role: 'MEMBER' }] };
+
+    expect(requireConversationMember(directContext, memberId)).toMatchObject({ role: 'MEMBER' });
+    expect(requireConversationMember(context, memberId)).toMatchObject({ role: 'MEMBER' });
+  });
+
   it('hides unknown, direct, and nonmember conversations', () => {
     expect(() => requireGroupMember(null, memberId)).toThrow(NotFoundError);
     expect(() => requireGroupMember({ type: 'DIRECT', members: [] }, memberId)).toThrow(

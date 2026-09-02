@@ -19,29 +19,42 @@ export function createConversationsRouter({ conversations, accessTokenVerifier }
   const controller = createConversationsController(conversations);
   const authenticate = createAccessTokenAuthenticator(accessTokenVerifier);
 
-  router.use(authenticate);
-  router.post('/direct', validateBody(createDirectConversationBodySchema), controller.createDirect);
-  router.post('/group', validateBody(createGroupConversationBodySchema), controller.createGroup);
-  router.get('/', validateQuery(listConversationsQuerySchema), controller.list);
+  router.post(
+    '/direct',
+    authenticate,
+    validateBody(createDirectConversationBodySchema),
+    controller.createDirect,
+  );
+  router.post(
+    '/group',
+    authenticate,
+    validateBody(createGroupConversationBodySchema),
+    controller.createGroup,
+  );
+  router.get('/', authenticate, validateQuery(listConversationsQuerySchema), controller.list);
   router.post(
     '/:id/members',
+    authenticate,
     validateParams(conversationIdParamsSchema),
     validateBody(addConversationMemberBodySchema),
     controller.addMember,
   );
   router.delete(
     '/:id/members/:userId',
+    authenticate,
     validateParams(conversationMemberParamsSchema),
     controller.removeMember,
   );
   router.patch(
     '/:id/members/:userId',
+    authenticate,
     validateParams(conversationMemberParamsSchema),
     validateBody(updateConversationMemberRoleBodySchema),
     controller.updateMemberRole,
   );
   router.patch(
     '/:id',
+    authenticate,
     validateParams(conversationIdParamsSchema),
     validateBody(updateGroupConversationBodySchema),
     controller.updateGroup,

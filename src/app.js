@@ -10,6 +10,8 @@ import { verifyAccessToken } from './modules/auth/tokens.js';
 import { conversationsService } from './modules/conversations/conversations.service.js';
 import { createConversationsRouter } from './modules/conversations/conversations.routes.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
+import { createMessagesRouter } from './modules/messages/messages.routes.js';
+import { messagesService } from './modules/messages/messages.service.js';
 import { createUsersRouter } from './modules/users/users.routes.js';
 import { usersService } from './modules/users/users.service.js';
 
@@ -20,6 +22,7 @@ export function createApp({
   authentication = authService,
   users = usersService,
   conversations = conversationsService,
+  messages = messagesService,
   accessTokenVerifier = verifyAccessToken,
   registerRoutes,
   requestLogging = requestLogger,
@@ -35,6 +38,7 @@ export function createApp({
   app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier }));
   app.use('/users', createUsersRouter({ users, accessTokenVerifier }));
   app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));
+  app.use('/conversations', createMessagesRouter({ messages, accessTokenVerifier }));
 
   if (registerRoutes) {
     registerRoutes(app);

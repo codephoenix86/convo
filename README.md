@@ -68,6 +68,8 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | POST   | `/conversations/:id/members`         | Add a group member as its owner or an admin.            |
 | DELETE | `/conversations/:id/members/:userId` | Remove a member when role rules allow it.               |
 | PATCH  | `/conversations/:id/members/:userId` | Promote or demote a member as owner.                    |
+| POST   | `/conversations/:id/messages`        | Persist an idempotent text message via REST.            |
+| GET    | `/conversations/:id/messages`        | Load stable cursor-paginated message history.           |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -117,5 +119,7 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
+- REST and future Socket.IO sends share one message service for authorization and idempotent persistence.
+- Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - `SIGINT` and `SIGTERM` stop accepting requests, close the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.
