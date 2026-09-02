@@ -49,18 +49,20 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 
 ## HTTP endpoints
 
-| Method | Path               | Purpose                                                 |
-| ------ | ------------------ | ------------------------------------------------------- |
-| GET    | `/health`          | Process liveness; does not query dependencies.          |
-| GET    | `/ready`           | Readiness; returns `503` when PostgreSQL cannot answer. |
-| POST   | `/auth/register`   | Create a user and authenticated refresh session.        |
-| POST   | `/auth/login`      | Authenticate by email/username and create a session.    |
-| POST   | `/auth/refresh`    | Rotate a refresh token and issue a new token pair.      |
-| POST   | `/auth/logout`     | Revoke the current refresh session.                     |
-| POST   | `/auth/logout-all` | Revoke every refresh session owned by the user.         |
-| GET    | `/users/me`        | Return the authenticated user's profile.                |
-| PATCH  | `/users/me`        | Update the authenticated user's username/avatar.        |
-| GET    | `/users/search`    | Search users with bounded cursor pagination.            |
+| Method | Path                    | Purpose                                                 |
+| ------ | ----------------------- | ------------------------------------------------------- |
+| GET    | `/health`               | Process liveness; does not query dependencies.          |
+| GET    | `/ready`                | Readiness; returns `503` when PostgreSQL cannot answer. |
+| POST   | `/auth/register`        | Create a user and authenticated refresh session.        |
+| POST   | `/auth/login`           | Authenticate by email/username and create a session.    |
+| POST   | `/auth/refresh`         | Rotate a refresh token and issue a new token pair.      |
+| POST   | `/auth/logout`          | Revoke the current refresh session.                     |
+| POST   | `/auth/logout-all`      | Revoke every refresh session owned by the user.         |
+| GET    | `/users/me`             | Return the authenticated user's profile.                |
+| PATCH  | `/users/me`             | Update the authenticated user's username/avatar.        |
+| GET    | `/users/search`         | Search users with bounded cursor pagination.            |
+| POST   | `/conversations/direct` | Create or reuse a canonical direct conversation.        |
+| GET    | `/conversations`        | List conversations with last message and unread count.  |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -106,5 +108,7 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 - Passwords use salted Argon2id hashes; opaque refresh tokens are stored only as SHA-256 hashes.
 - Access JWTs are signed with HS256 and restricted to the configured issuer, audience, and lifetime.
 - Refresh tokens rotate atomically; current/all-session logout revokes server-side refresh state.
+- Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
+- Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
 - `SIGINT` and `SIGTERM` stop accepting requests, close the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.

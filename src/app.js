@@ -7,6 +7,8 @@ import { requestLogger } from './middleware/request-logger.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { authService } from './modules/auth/auth.service.js';
 import { verifyAccessToken } from './modules/auth/tokens.js';
+import { conversationsService } from './modules/conversations/conversations.service.js';
+import { createConversationsRouter } from './modules/conversations/conversations.routes.js';
 import { createHealthRouter } from './modules/health/health.routes.js';
 import { createUsersRouter } from './modules/users/users.routes.js';
 import { usersService } from './modules/users/users.service.js';
@@ -17,6 +19,7 @@ export function createApp({
   database = db,
   authentication = authService,
   users = usersService,
+  conversations = conversationsService,
   accessTokenVerifier = verifyAccessToken,
   registerRoutes,
   requestLogging = requestLogger,
@@ -31,6 +34,7 @@ export function createApp({
   app.use(createHealthRouter({ database }));
   app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier }));
   app.use('/users', createUsersRouter({ users, accessTokenVerifier }));
+  app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));
 
   if (registerRoutes) {
     registerRoutes(app);
