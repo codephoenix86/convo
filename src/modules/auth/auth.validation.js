@@ -1,19 +1,13 @@
 import { z } from 'zod';
 
+import { usernameSchema } from '../users/users.validation.js';
+
 const normalizedEmailSchema = z
   .string()
   .trim()
   .toLowerCase()
   .max(254, 'Email must contain at most 254 characters')
   .pipe(z.email('Email must be valid'));
-
-const normalizedUsernameSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .min(3, 'Username must contain at least 3 characters')
-  .max(32, 'Username must contain at most 32 characters')
-  .regex(/^[a-z0-9_]+$/, 'Username may contain only lowercase letters, numbers, and underscores');
 
 const registrationPasswordSchema = z
   .string()
@@ -27,7 +21,7 @@ const registrationPasswordSchema = z
 export const registerBodySchema = z
   .object({
     email: normalizedEmailSchema,
-    username: normalizedUsernameSchema,
+    username: usernameSchema,
     password: registrationPasswordSchema,
   })
   .strict();

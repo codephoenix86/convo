@@ -58,6 +58,9 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | POST   | `/auth/refresh`    | Rotate a refresh token and issue a new token pair.      |
 | POST   | `/auth/logout`     | Revoke the current refresh session.                     |
 | POST   | `/auth/logout-all` | Revoke every refresh session owned by the user.         |
+| GET    | `/users/me`        | Return the authenticated user's profile.                |
+| PATCH  | `/users/me`        | Update the authenticated user's username/avatar.        |
+| GET    | `/users/search`    | Search users with bounded cursor pagination.            |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 

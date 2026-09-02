@@ -36,7 +36,9 @@ describe('access tokens', () => {
 
   it('rejects tampered access tokens with a generic auth error', async () => {
     const token = await signAccessToken({ userId: randomUUID(), sessionId: randomUUID() });
-    const tamperedToken = `${token.slice(0, -1)}${token.endsWith('a') ? 'b' : 'a'}`;
+    const [header, payload, signature] = token.split('.');
+    const tamperedSignature = `${signature.startsWith('a') ? 'b' : 'a'}${signature.slice(1)}`;
+    const tamperedToken = `${header}.${payload}.${tamperedSignature}`;
 
     await expect(verifyAccessToken(tamperedToken)).rejects.toEqual(
       expect.objectContaining({

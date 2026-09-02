@@ -7,15 +7,36 @@ export function validateBody(schema) {
     const result = schema.safeParse(request.body);
 
     if (!result.success) {
-      const details = result.error.issues.map((issue) => ({
-        field: issue.path.join('.') || 'body',
-        message: issue.message,
-      }));
-
-      return next(new ValidationError('Request body validation failed', details));
+      return next(
+        createRequestValidationError(result.error, 'body', 'Request body validation failed'),
+      );
     }
 
     request.body = result.data;
     return next();
   };
+}
+
+export function validateQuery(schema) {
+  return function queryValidationHandler(request, response, next) {
+    void response;
+
+    const result = schema.safeParse(request.query);
+
+    if (!result.success) {
+      return next(createRequestValidationError(result.error, 'query'));
+    }
+
+    request.validated = { ...request.validated, query: result.data };
+    return next();
+  };
+}
+
+function createRequestValidationError(error, fallbackField, message = 'Request validation failed') {
+  const details = error.issues.map((issue) => ({
+    field: issue.path.join('.') || fallbackField,
+    message: issue.message,
+  }));
+
+  return new ValidationError(message, details);
 }
