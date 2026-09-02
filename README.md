@@ -2,7 +2,7 @@
 
 A production-minded real-time chat backend built as a modular monolith with Node.js, Express, PostgreSQL, and Prisma. Socket.IO and Redis are planned for the real-time milestones.
 
-Milestone A provides the application foundation: validated configuration, PostgreSQL migrations, the User model, an Express server, health checks, structured logging, graceful shutdown, and foundation tests. Milestone B is in progress with the core chat schema and authentication cryptographic primitives; REST endpoints will follow in later commits.
+Milestones A and B provide the application foundation and REST core: validated configuration, migrations, health checks, structured logging, authentication and session rotation, users, direct/group conversations, role-based membership, persisted messages, and cursor-paginated history.
 
 ## Requirements
 
@@ -32,13 +32,21 @@ Milestone A provides the application foundation: validated configuration, Postgr
    npm run db:migrate:deploy
    ```
 
-5. Start the development server:
+5. Optionally load idempotent demo users, conversations, and messages:
+
+   ```bash
+   npm run db:seed
+   ```
+
+   The demo accounts are `alice_demo`, `bob_demo`, and `maya_demo`; their development-only password is `Demo-password1!`.
+
+6. Start the development server:
 
    ```bash
    npm run dev
    ```
 
-6. Verify the service:
+7. Verify the service:
 
    ```bash
    curl http://localhost:3000/health
@@ -75,21 +83,25 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 
 ## Commands
 
-| Command                     | Purpose                                       |
-| --------------------------- | --------------------------------------------- |
-| `npm run dev`               | Start with Node's watch mode.                 |
-| `npm start`                 | Start the server normally.                    |
-| `npm test`                  | Run all foundation tests once.                |
-| `npm run test:unit`         | Run unit tests.                               |
-| `npm run test:integration`  | Run HTTP, configuration, and lifecycle tests. |
-| `npm run lint`              | Check JavaScript with ESLint.                 |
-| `npm run format:check`      | Check formatting with Prettier.               |
-| `npm run db:generate`       | Regenerate Prisma Client.                     |
-| `npm run db:validate`       | Validate the Prisma schema.                   |
-| `npm run db:migrate`        | Create/apply a development migration.         |
-| `npm run db:migrate:deploy` | Apply committed migrations.                   |
-| `npm run db:migrate:status` | Show migration status.                        |
-| `npm run db:studio`         | Open Prisma Studio.                           |
+| Command                     | Purpose                                                |
+| --------------------------- | ------------------------------------------------------ |
+| `npm run dev`               | Start with Node's watch mode.                          |
+| `npm start`                 | Start the server normally.                             |
+| `npm test`                  | Run fast unit and HTTP contract tests once.            |
+| `npm run test:unit`         | Run unit tests.                                        |
+| `npm run test:integration`  | Run HTTP, configuration, and lifecycle contract tests. |
+| `npm run test:database`     | Migrate and test against an isolated PostgreSQL DB.    |
+| `npm run lint`              | Check JavaScript with ESLint.                          |
+| `npm run format:check`      | Check formatting with Prettier.                        |
+| `npm run db:generate`       | Regenerate Prisma Client.                              |
+| `npm run db:validate`       | Validate the Prisma schema.                            |
+| `npm run db:migrate`        | Create/apply a development migration.                  |
+| `npm run db:migrate:deploy` | Apply committed migrations.                            |
+| `npm run db:migrate:status` | Show migration status.                                 |
+| `npm run db:seed`           | Idempotently load realistic development data.          |
+| `npm run db:studio`         | Open Prisma Studio.                                    |
+
+Database-backed tests are intentionally separate from the fast default suite. Create a disposable database whose name ends in `_test`, set `TEST_DATABASE_URL` in `.env`, and run `npm run test:database`. The safety wrapper refuses to use the same database as `DATABASE_URL`, applies committed migrations, and clears only that isolated database between cases.
 
 ## Environment variables
 
@@ -100,6 +112,7 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 | `PORT`                           | HTTP port from 1 through 65535.               |
 | `LOG_LEVEL`                      | Pino log threshold.                           |
 | `DATABASE_URL`                   | PostgreSQL connection URL.                    |
+| `TEST_DATABASE_URL`              | Disposable PostgreSQL database used by tests. |
 | `DATABASE_CONNECTION_TIMEOUT_MS` | Database connection timeout from 100–30000ms. |
 | `ACCESS_TOKEN_SECRET`            | Secret of at least 32 characters for JWTs.    |
 | `ACCESS_TOKEN_TTL_SECONDS`       | Access-token lifetime from 60–3600 seconds.   |
@@ -121,5 +134,6 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and future Socket.IO sends share one message service for authorization and idempotent persistence.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
+- Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - `SIGINT` and `SIGTERM` stop accepting requests, close the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.

@@ -15,12 +15,14 @@
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:database": "node scripts/run-database-tests.js",
     "postinstall": "node --env-file=.env.example --env-file-if-exists=.env ./node_modules/prisma/build/index.js generate",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
+    "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },
   "engines": {
