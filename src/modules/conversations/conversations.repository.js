@@ -65,6 +65,60 @@ export function createConversationsRepository(database = db) {
       });
     },
 
+    createGroup({ creatorId, name, imageUrl, memberIds }) {
+      return database.$transaction(async (transaction) => {
+        const existingMembers = await transaction.user.findMany({
+          where: { id: { in: memberIds } },
+          select: { id: true },
+        });
+
+        if (existingMembers.length !== memberIds.length) {
+          throw new NotFoundError('One or more users were not found');
+        }
+
+        return transaction.conversation.create({
+          data: {
+            type: 'GROUP',
+            name,
+            imageUrl,
+            createdById: creatorId,
+            members: {
+              create: [
+                { userId: creatorId, role: 'OWNER' },
+                ...memberIds.map((userId) => ({ userId, role: 'MEMBER' })),
+              ],
+            },
+          },
+          include: conversationInclude,
+        });
+      });
+    },
+
+    async updateGroup({ conversationId, actorId, changes }) {
+      try {
+        return await database.conversation.update({
+          where: {
+            id: conversationId,
+            type: 'GROUP',
+            members: {
+              some: {
+                userId: actorId,
+                role: { in: ['OWNER', 'ADMIN'] },
+              },
+            },
+          },
+          data: changes,
+          include: conversationInclude,
+        });
+      } catch (error) {
+        if (isRecordNotFoundError(error)) {
+          throw new NotFoundError('Conversation not found');
+        }
+
+        throw error;
+      }
+    },
+
     async listForUser({ userId, cursor, limit }) {
       const cursorFilter = cursor
         ? {
@@ -113,6 +167,10 @@ export function createConversationsRepository(database = db) {
       return { conversations, hasNextPage, unreadCounts };
     },
   };
+}
+
+function isRecordNotFoundError(error) {
+  return error !== null && typeof error === 'object' && error.code === 'P2025';
 }
 
 export const conversationsRepository = createConversationsRepository();

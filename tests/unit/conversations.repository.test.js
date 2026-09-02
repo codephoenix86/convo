@@ -106,4 +106,111 @@ describe('conversations repository', () => {
     });
     expect(result.unreadCounts.get(conversationId)).toBe(4);
   });
+
+  it('creates the group and all validated memberships atomically', async () => {
+    const createdGroup = { id: conversationId, type: 'GROUP' };
+    const transaction = {
+      user: {
+        findMany: vi.fn().mockResolvedValue([{ id: participantId }]),
+      },
+      conversation: {
+        create: vi.fn().mockResolvedValue(createdGroup),
+      },
+    };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
+    const repository = createConversationsRepository(database);
+
+    const result = await repository.createGroup({
+      creatorId: userId,
+      name: 'Backend Team',
+      imageUrl: null,
+      memberIds: [participantId],
+    });
+
+    expect(result).toBe(createdGroup);
+    expect(transaction.conversation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          type: 'GROUP',
+          name: 'Backend Team',
+          imageUrl: null,
+          createdById: userId,
+          members: {
+            create: [
+              { userId, role: 'OWNER' },
+              { userId: participantId, role: 'MEMBER' },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  it('does not create a partial group when any requested user is missing', async () => {
+    const transaction = {
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      conversation: { create: vi.fn() },
+    };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
+    const repository = createConversationsRepository(database);
+
+    await expect(
+      repository.createGroup({
+        creatorId: userId,
+        name: 'Backend Team',
+        imageUrl: null,
+        memberIds: [participantId],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(transaction.conversation.create).not.toHaveBeenCalled();
+  });
+
+  it('updates group metadata only when the actor is its owner or an admin', async () => {
+    const database = {
+      conversation: { update: vi.fn().mockResolvedValue({ id: conversationId }) },
+    };
+    const repository = createConversationsRepository(database);
+
+    await repository.updateGroup({
+      conversationId,
+      actorId: userId,
+      changes: { name: 'Renamed Team' },
+    });
+
+    expect(database.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: conversationId,
+          type: 'GROUP',
+          members: {
+            some: {
+              userId,
+              role: { in: ['OWNER', 'ADMIN'] },
+            },
+          },
+        },
+        data: { name: 'Renamed Team' },
+      }),
+    );
+  });
+
+  it('hides nonexistent, direct, nonmember, and member-only conversations identically', async () => {
+    const database = {
+      conversation: { update: vi.fn().mockRejectedValue({ code: 'P2025' }) },
+    };
+    const repository = createConversationsRepository(database);
+
+    await expect(
+      repository.updateGroup({
+        conversationId,
+        actorId: userId,
+        changes: { name: 'Renamed Team' },
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: NotFoundError.name,
+        message: 'Conversation not found',
+      }),
+    );
+  });
 });

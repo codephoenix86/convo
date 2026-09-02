@@ -35,6 +35,8 @@ const conversation = {
 function createConversations() {
   return {
     createDirect: vi.fn(),
+    createGroup: vi.fn(),
+    updateGroup: vi.fn(),
     list: vi.fn(),
   };
 }
@@ -126,5 +128,99 @@ describe('GET /conversations', () => {
       .expect(400);
 
     expect(conversations.list).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /conversations/group', () => {
+  it('creates a normalized group with initial members', async () => {
+    const conversations = createConversations();
+    conversations.createGroup.mockResolvedValue({
+      ...conversation,
+      type: 'GROUP',
+      name: 'Backend Team',
+    });
+
+    const response = await request(createAuthenticatedApp(conversations))
+      .post('/conversations/group')
+      .set('authorization', 'Bearer valid-access-token')
+      .send({
+        name: ' Backend Team ',
+        imageUrl: ' https://example.com/group.png ',
+        memberIds: [participantId],
+      })
+      .expect(201);
+
+    expect(conversations.createGroup).toHaveBeenCalledWith(userId, {
+      name: 'Backend Team',
+      imageUrl: 'https://example.com/group.png',
+      memberIds: [participantId],
+    });
+    expect(response.body.data.conversation).toMatchObject({
+      type: 'GROUP',
+      name: 'Backend Team',
+    });
+  });
+
+  it('rejects duplicate members and unsafe image URLs before creating a group', async () => {
+    const conversations = createConversations();
+
+    await request(createAuthenticatedApp(conversations))
+      .post('/conversations/group')
+      .set('authorization', 'Bearer valid-access-token')
+      .send({
+        name: 'Backend Team',
+        imageUrl: 'file:///etc/passwd',
+        memberIds: [participantId, participantId],
+      })
+      .expect(400);
+
+    expect(conversations.createGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /conversations/:id', () => {
+  it('updates only normalized group metadata', async () => {
+    const conversations = createConversations();
+    conversations.updateGroup.mockResolvedValue({
+      ...conversation,
+      type: 'GROUP',
+      name: 'Renamed Team',
+    });
+
+    const response = await request(createAuthenticatedApp(conversations))
+      .patch(`/conversations/${conversationId}`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ name: ' Renamed Team ', imageUrl: null })
+      .expect(200);
+
+    expect(conversations.updateGroup).toHaveBeenCalledWith(userId, conversationId, {
+      name: 'Renamed Team',
+      imageUrl: null,
+    });
+    expect(response.body.data.conversation.name).toBe('Renamed Team');
+  });
+
+  it('rejects invalid IDs, empty updates, and unrelated fields', async () => {
+    const conversations = createConversations();
+    const app = createAuthenticatedApp(conversations);
+    const authorization = { authorization: 'Bearer valid-access-token' };
+
+    await request(app)
+      .patch('/conversations/not-a-uuid')
+      .set(authorization)
+      .send({ name: 'Renamed Team' })
+      .expect(400);
+    await request(app)
+      .patch(`/conversations/${conversationId}`)
+      .set(authorization)
+      .send({})
+      .expect(400);
+    await request(app)
+      .patch(`/conversations/${conversationId}`)
+      .set(authorization)
+      .send({ type: 'DIRECT' })
+      .expect(400);
+
+    expect(conversations.updateGroup).not.toHaveBeenCalled();
   });
 });

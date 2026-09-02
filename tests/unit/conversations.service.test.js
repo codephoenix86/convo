@@ -101,4 +101,53 @@ describe('conversations service', () => {
       limit: 20,
     });
   });
+
+  it('creates a group with the authenticated user as its implicit owner', async () => {
+    const group = createConversation({ type: 'GROUP', name: 'Backend Team' });
+    const repository = { createGroup: vi.fn().mockResolvedValue(group) };
+    const service = createConversationsService(repository);
+
+    const result = await service.createGroup(firstUserId, {
+      name: 'Backend Team',
+      memberIds: [secondUserId],
+    });
+
+    expect(repository.createGroup).toHaveBeenCalledWith({
+      creatorId: firstUserId,
+      name: 'Backend Team',
+      imageUrl: null,
+      memberIds: [secondUserId],
+    });
+    expect(result).toMatchObject({ type: 'GROUP', name: 'Backend Team' });
+  });
+
+  it('rejects a group member list that repeats its implicit owner', async () => {
+    const repository = { createGroup: vi.fn() };
+    const service = createConversationsService(repository);
+
+    await expect(
+      service.createGroup(firstUserId, {
+        name: 'Backend Team',
+        memberIds: [firstUserId],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(repository.createGroup).not.toHaveBeenCalled();
+  });
+
+  it('delegates authorized group metadata updates to an atomic repository write', async () => {
+    const updatedGroup = createConversation({ type: 'GROUP', name: 'Renamed Team' });
+    const repository = { updateGroup: vi.fn().mockResolvedValue(updatedGroup) };
+    const service = createConversationsService(repository);
+
+    const result = await service.updateGroup(firstUserId, conversationId, {
+      name: 'Renamed Team',
+    });
+
+    expect(repository.updateGroup).toHaveBeenCalledWith({
+      actorId: firstUserId,
+      conversationId,
+      changes: { name: 'Renamed Team' },
+    });
+    expect(result.name).toBe('Renamed Team');
+  });
 });

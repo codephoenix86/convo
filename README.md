@@ -63,6 +63,8 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | GET    | `/users/search`         | Search users with bounded cursor pagination.            |
 | POST   | `/conversations/direct` | Create or reuse a canonical direct conversation.        |
 | GET    | `/conversations`        | List conversations with last message and unread count.  |
+| POST   | `/conversations/group`  | Create a group with an owner and initial members.       |
+| PATCH  | `/conversations/:id`    | Update group metadata as its owner or an admin.         |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -110,5 +112,6 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 - Refresh tokens rotate atomically; current/all-session logout revokes server-side refresh state.
 - Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
+- Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - `SIGINT` and `SIGTERM` stop accepting requests, close the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.

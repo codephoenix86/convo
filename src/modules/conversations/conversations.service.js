@@ -30,6 +30,29 @@ export function createConversationsService(repository) {
       return formatConversation(conversation);
     },
 
+    async createGroup(creatorId, { name, imageUrl = null, memberIds }) {
+      if (memberIds.includes(creatorId)) {
+        throw new ValidationError('Group members must not include the owner', [
+          { field: 'memberIds', message: 'The authenticated owner is added automatically' },
+        ]);
+      }
+
+      const conversation = await repository.createGroup({
+        creatorId,
+        name,
+        imageUrl,
+        memberIds,
+      });
+
+      return formatConversation(conversation);
+    },
+
+    async updateGroup(actorId, conversationId, changes) {
+      const conversation = await repository.updateGroup({ conversationId, actorId, changes });
+
+      return formatConversation(conversation);
+    },
+
     async list(userId, { cursor: encodedCursor, limit }) {
       const parsedCursor = encodedCursor
         ? decodeCursor(encodedCursor, conversationListCursorSchema)
