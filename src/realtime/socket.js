@@ -4,8 +4,10 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { verifyAccessToken } from '../modules/auth/tokens.js';
 import { conversationsRepository } from '../modules/conversations/conversations.repository.js';
+import { messagesService } from '../modules/messages/messages.service.js';
 import { createSocketAuthenticator } from './authenticate.js';
 import { createConversationRoomCoordinator } from './conversation-rooms.js';
+import { registerMessageHandlers } from './handlers/messages.js';
 
 export function createSocketServer(
   httpServer,
@@ -14,6 +16,7 @@ export function createSocketServer(
     accessTokenVerifier = verifyAccessToken,
     membershipRepository = conversationsRepository,
     roomCoordinator = createConversationRoomCoordinator(),
+    messages = messagesService,
     log = logger,
   } = {},
 ) {
@@ -37,15 +40,18 @@ export function createSocketServer(
   io.use(createSocketAuthenticator(accessTokenVerifier, log));
   io.use(createConversationRoomInitializer(roomCoordinator, membershipRepository, log));
   io.on('connection', (socket) => {
-    void initializeConnectedSocket(socket, roomCoordinator, connectionTracker, log);
+    const ready = roomCoordinator.connectSocket(socket);
+
+    registerMessageHandlers(socket, { messages, ready, log });
+    void initializeConnectedSocket(socket, ready, connectionTracker, log);
   });
 
   return io;
 }
 
-async function initializeConnectedSocket(socket, roomCoordinator, connectionTracker, log) {
+async function initializeConnectedSocket(socket, ready, connectionTracker, log) {
   try {
-    const initialized = await roomCoordinator.connectSocket(socket);
+    const initialized = await ready;
 
     if (initialized) {
       trackSocket(socket, connectionTracker, log);

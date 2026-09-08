@@ -25,7 +25,7 @@ const messages = createMessagesService({
 });
 const app = createApp({ conversations, messages });
 const server = createServer(app);
-const io = createSocketServer(server, { roomCoordinator: conversationRooms });
+const io = createSocketServer(server, { roomCoordinator: conversationRooms, messages });
 messageEvents.attach(io);
 
 let shutdownPromise;

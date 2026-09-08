@@ -85,6 +85,8 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 
 Socket clients authenticate during the connection handshake by providing the access token as `auth.token`. Invalid or missing tokens are rejected before the socket can run application handlers. Each authenticated connection joins a private `user:<userId>` room and server-derived `conversation:<conversationId>` rooms loaded from PostgreSQL. Clients cannot select their own rooms; successful conversation and membership writes synchronize room access for every connected device.
 
+An authenticated client sends `message:send` with `{ conversationId, clientMessageId, body, replyToId? }` and an acknowledgement callback. Success acknowledgements use `{ ok: true, data: { message, created } }`; rejected events use `{ ok: false, error: { code, message, details? } }`. A newly persisted message is broadcast as `message:new` with `{ message }`. Authorization is checked again for every send even though the socket initially joined authorized rooms.
+
 ## Commands
 
 | Command                     | Purpose                                                |
