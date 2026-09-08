@@ -81,6 +81,10 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
+## Socket.IO connections
+
+Socket clients authenticate during the connection handshake by providing the access token as `auth.token`. Invalid or missing tokens are rejected before the socket can run application handlers. Each authenticated connection joins a private `user:<userId>` room so all of a user's active devices can receive account-level events.
+
 ## Commands
 
 | Command                     | Purpose                                                |
@@ -137,5 +141,6 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
+- Socket handshakes require a valid access token, and connection logs expose safe total/per-user counts without logging credentials.
 - `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.
