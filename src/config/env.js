@@ -1,5 +1,49 @@
 import { z } from 'zod';
 
+const clientOriginsSchema = z
+  .string()
+  .default('http://localhost:5173')
+  .transform((value, context) => {
+    const origins = [...new Set(value.split(',').map((origin) => origin.trim()))];
+
+    if (origins.length === 0 || origins.some((origin) => origin.length === 0)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'must contain one or more comma-separated HTTP(S) origins',
+      });
+
+      return z.NEVER;
+    }
+
+    const normalizedOrigins = [];
+
+    for (const origin of origins) {
+      try {
+        const url = new URL(origin);
+
+        if (
+          !['http:', 'https:'].includes(url.protocol) ||
+          url.pathname !== '/' ||
+          url.search ||
+          url.hash
+        ) {
+          throw new Error('Invalid origin');
+        }
+
+        normalizedOrigins.push(url.origin);
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          message: `contains an invalid origin: ${origin}`,
+        });
+
+        return z.NEVER;
+      }
+    }
+
+    return normalizedOrigins;
+  });
+
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().trim().min(1, 'must not be empty').default('0.0.0.0'),
@@ -18,6 +62,7 @@ const environmentSchema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   JWT_ISSUER: z.string().trim().min(1).max(100).default('convo-api'),
   JWT_AUDIENCE: z.string().trim().min(1).max(100).default('convo-client'),
+  CLIENT_ORIGINS: clientOriginsSchema,
 });
 
 loadLocalEnvironment();

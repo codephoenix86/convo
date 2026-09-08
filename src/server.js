@@ -4,9 +4,11 @@ import { app } from './app.js';
 import { db } from './config/db.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
+import { createSocketServer } from './realtime/socket.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 const server = createServer(app);
+const io = createSocketServer(server);
 
 let shutdownPromise;
 
@@ -66,6 +68,7 @@ async function shutdown(reason, exitCode) {
   forceShutdownTimer.unref();
 
   try {
+    await closeSocketServer();
     await closeHttpServer();
     await db.$disconnect();
 
@@ -77,6 +80,12 @@ async function shutdown(reason, exitCode) {
   } finally {
     clearTimeout(forceShutdownTimer);
   }
+}
+
+function closeSocketServer() {
+  return new Promise((resolve, reject) => {
+    io.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 function closeHttpServer() {

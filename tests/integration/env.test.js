@@ -47,7 +47,47 @@ describe('environment configuration', () => {
       REFRESH_TOKEN_TTL_DAYS: 30,
       JWT_ISSUER: 'convo-api-test',
       JWT_AUDIENCE: 'convo-client-test',
+      CLIENT_ORIGINS: ['http://localhost:5173'],
     });
+  });
+
+  it('normalizes a comma-separated client origin allowlist', () => {
+    const environment = createEnvironment({
+      DATABASE_URL: 'postgresql://convo:convo@localhost:5432/convo_test',
+      CLIENT_ORIGINS: 'https://chat.example.com, http://localhost:5173/',
+    });
+
+    const result = runEnvironmentImport(environment, true);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).CLIENT_ORIGINS).toEqual([
+      'https://chat.example.com',
+      'http://localhost:5173',
+    ]);
+  });
+
+  it('provides a local development client origin by default', () => {
+    const environment = createEnvironment({
+      DATABASE_URL: 'postgresql://convo:convo@localhost:5432/convo_test',
+    });
+    delete environment.CLIENT_ORIGINS;
+
+    const result = runEnvironmentImport(environment, true);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout).CLIENT_ORIGINS).toEqual(['http://localhost:5173']);
+  });
+
+  it('rejects invalid client origins', () => {
+    const environment = createEnvironment({
+      DATABASE_URL: 'postgresql://convo:convo@localhost:5432/convo_test',
+      CLIENT_ORIGINS: 'https://chat.example.com/path',
+    });
+
+    const result = runEnvironmentImport(environment);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('CLIENT_ORIGINS: contains an invalid origin');
   });
 });
 
@@ -64,6 +104,7 @@ function createEnvironment(overrides = {}) {
     REFRESH_TOKEN_TTL_DAYS: '30',
     JWT_ISSUER: 'convo-api-test',
     JWT_AUDIENCE: 'convo-client-test',
+    CLIENT_ORIGINS: 'http://localhost:5173',
     ...overrides,
   };
 }

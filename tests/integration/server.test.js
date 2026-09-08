@@ -37,6 +37,24 @@ describe('server lifecycle', () => {
     try {
       await waitFor(() => stdout.includes('"event":"server_started"'), 5000);
 
+      const socketResponse = await fetch(
+        `http://127.0.0.1:${port}/socket.io/?EIO=4&transport=polling`,
+        { headers: { origin: 'http://localhost:5173' } },
+      );
+
+      expect(socketResponse.status).toBe(200);
+      expect(socketResponse.headers.get('access-control-allow-origin')).toBe(
+        'http://localhost:5173',
+      );
+      expect(await socketResponse.text()).toMatch(/^0\{/);
+
+      const rejectedOriginResponse = await fetch(
+        `http://127.0.0.1:${port}/socket.io/?EIO=4&transport=polling`,
+        { headers: { origin: 'https://untrusted.example.com' } },
+      );
+
+      expect(rejectedOriginResponse.status).toBe(403);
+
       const exitPromise = once(child, 'exit');
       child.kill('SIGTERM');
 

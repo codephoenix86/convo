@@ -1,6 +1,6 @@
 # Convo Chat Backend
 
-A production-minded real-time chat backend built as a modular monolith with Node.js, Express, PostgreSQL, and Prisma. Socket.IO and Redis are planned for the real-time milestones.
+A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, and Prisma. Redis-backed horizontal scaling is planned after single-instance real-time correctness.
 
 Milestones A and B provide the application foundation and REST core: validated configuration, migrations, health checks, structured logging, authentication and session rotation, users, direct/group conversations, role-based membership, persisted messages, and cursor-paginated history.
 
@@ -119,6 +119,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 | `REFRESH_TOKEN_TTL_DAYS`         | Refresh-session lifetime from 1–90 days.      |
 | `JWT_ISSUER`                     | Expected access-token issuer.                 |
 | `JWT_AUDIENCE`                   | Expected access-token audience.               |
+| `CLIENT_ORIGINS`                 | Comma-separated browser origin allowlist.     |
 
 ## Operational behavior
 
@@ -135,5 +136,6 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - REST and future Socket.IO sends share one message service for authorization and idempotent persistence.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
-- `SIGINT` and `SIGTERM` stop accepting requests, close the HTTP server, disconnect Prisma, and exit cleanly.
+- Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
+- `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.
