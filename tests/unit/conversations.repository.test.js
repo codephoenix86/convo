@@ -12,6 +12,22 @@ const joinedAt = new Date('2026-09-01T12:00:00.000Z');
 const updatedAt = new Date('2026-09-01T12:05:00.000Z');
 
 describe('conversations repository', () => {
+  it('loads only conversation IDs for a user room rebuild', async () => {
+    const database = {
+      conversationMember: {
+        findMany: vi.fn().mockResolvedValue([{ conversationId }]),
+      },
+    };
+    const repository = createConversationsRepository(database);
+
+    await expect(repository.listConversationIdsForUser(userId)).resolves.toEqual([conversationId]);
+    expect(database.conversationMember.findMany).toHaveBeenCalledWith({
+      where: { userId },
+      orderBy: { conversationId: 'asc' },
+      select: { conversationId: true },
+    });
+  });
+
   it('creates or reuses a direct conversation and both memberships in one transaction', async () => {
     const conversation = { id: conversationId };
     const transaction = {

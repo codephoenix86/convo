@@ -69,6 +69,24 @@ describe('conversations service', () => {
     expect(repository.createOrGetDirect).not.toHaveBeenCalled();
   });
 
+  it('synchronizes every persisted direct-conversation member with realtime rooms', async () => {
+    const repository = {
+      createOrGetDirect: vi.fn().mockResolvedValue(createConversation()),
+    };
+    const membershipEvents = {
+      membersAdded: vi.fn(),
+      memberRemoved: vi.fn(),
+    };
+    const service = createConversationsService(repository, { membershipEvents });
+
+    await service.createDirect(firstUserId, secondUserId);
+
+    expect(membershipEvents.membersAdded).toHaveBeenCalledWith({
+      conversationId,
+      userIds: [firstUserId, secondUserId],
+    });
+  });
+
   it('formats a bounded inbox page with unread counts and a stable next cursor', async () => {
     const repository = {
       listForUser: vi.fn().mockResolvedValue({
@@ -119,6 +137,29 @@ describe('conversations service', () => {
       memberIds: [secondUserId],
     });
     expect(result).toMatchObject({ type: 'GROUP', name: 'Backend Team' });
+  });
+
+  it('synchronizes every persisted group member with realtime rooms', async () => {
+    const repository = {
+      createGroup: vi
+        .fn()
+        .mockResolvedValue(createConversation({ type: 'GROUP', name: 'Backend Team' })),
+    };
+    const membershipEvents = {
+      membersAdded: vi.fn(),
+      memberRemoved: vi.fn(),
+    };
+    const service = createConversationsService(repository, { membershipEvents });
+
+    await service.createGroup(firstUserId, {
+      name: 'Backend Team',
+      memberIds: [secondUserId],
+    });
+
+    expect(membershipEvents.membersAdded).toHaveBeenCalledWith({
+      conversationId,
+      userIds: [firstUserId, secondUserId],
+    });
   });
 
   it('rejects a group member list that repeats its implicit owner', async () => {

@@ -3,14 +3,17 @@ import { Server } from 'socket.io';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { verifyAccessToken } from '../modules/auth/tokens.js';
+import { conversationsRepository } from '../modules/conversations/conversations.repository.js';
 import { createSocketAuthenticator } from './authenticate.js';
-import { getUserRoom } from './rooms.js';
+import { createConversationRoomCoordinator } from './conversation-rooms.js';
 
 export function createSocketServer(
   httpServer,
   {
     allowedOrigins = env.CLIENT_ORIGINS,
     accessTokenVerifier = verifyAccessToken,
+    membershipRepository = conversationsRepository,
+    roomCoordinator = createConversationRoomCoordinator(),
     log = logger,
   } = {},
 ) {
@@ -30,24 +33,43 @@ export function createSocketServer(
     },
   });
 
+  roomCoordinator.attach(io);
   io.use(createSocketAuthenticator(accessTokenVerifier, log));
+  io.use(createConversationRoomInitializer(roomCoordinator, membershipRepository, log));
   io.on('connection', (socket) => {
-    void initializeSocket(socket, connectionTracker, log);
+    void initializeConnectedSocket(socket, roomCoordinator, connectionTracker, log);
   });
 
   return io;
 }
 
-async function initializeSocket(socket, connectionTracker, log) {
+async function initializeConnectedSocket(socket, roomCoordinator, connectionTracker, log) {
+  try {
+    const initialized = await roomCoordinator.connectSocket(socket);
+
+    if (initialized) {
+      trackSocket(socket, connectionTracker, log);
+    }
+  } catch (error) {
+    log.error(
+      {
+        err: error,
+        event: 'socket_initialization_failed',
+        socketId: socket.id,
+        userId: socket.data.user.id,
+      },
+      'Socket initialization failed',
+    );
+    socket.disconnect(true);
+  }
+}
+
+function trackSocket(socket, connectionTracker, log) {
   const userId = socket.data.user.id;
-  let connectedAt;
-  let isTracked = false;
+  const connectedAt = Date.now();
+  const counts = connectionTracker.connect(userId);
 
   socket.once('disconnect', (reason) => {
-    if (!isTracked) {
-      return;
-    }
-
     const updatedCounts = connectionTracker.disconnect(userId);
 
     log.info(
@@ -63,35 +85,43 @@ async function initializeSocket(socket, connectionTracker, log) {
     );
   });
 
-  try {
-    await socket.join(getUserRoom(userId));
-  } catch (error) {
-    log.error(
-      { err: error, event: 'socket_initialization_failed', socketId: socket.id, userId },
-      'Socket initialization failed',
-    );
-    socket.disconnect(true);
-    return;
-  }
-
-  if (!socket.connected) {
-    return;
-  }
-
-  connectedAt = Date.now();
-  const counts = connectionTracker.connect(userId);
-  isTracked = true;
-
   log.info(
     {
       event: 'socket_connected',
       socketId: socket.id,
       userId,
       transport: socket.conn.transport.name,
+      conversationRooms: socket.data.conversationIds.length,
       ...counts,
     },
     'Socket connected',
   );
+}
+
+function createConversationRoomInitializer(roomCoordinator, membershipRepository, log) {
+  return async function initializeConversationRooms(socket, next) {
+    try {
+      await roomCoordinator.initializeSocket(socket, membershipRepository);
+      next();
+    } catch (error) {
+      log.error(
+        {
+          err: error,
+          event: 'socket_membership_load_failed',
+          socketId: socket.id,
+          userId: socket.data.user.id,
+        },
+        'Socket conversation memberships could not be loaded',
+      );
+
+      const connectionError = new Error('Unable to establish socket connection');
+      connectionError.data = {
+        code: 'CONNECTION_UNAVAILABLE',
+        message: 'Unable to establish socket connection',
+      };
+      next(connectionError);
+    }
+  };
 }
 
 function createConnectionTracker() {

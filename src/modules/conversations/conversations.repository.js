@@ -37,6 +37,16 @@ const conversationInclude = Object.freeze({
 
 export function createConversationsRepository(database = db) {
   return {
+    async listConversationIdsForUser(userId) {
+      const memberships = await database.conversationMember.findMany({
+        where: { userId },
+        orderBy: { conversationId: 'asc' },
+        select: { conversationId: true },
+      });
+
+      return memberships.map((membership) => membership.conversationId);
+    },
+
     findAccessContext(conversationId, userIds) {
       return database.conversation.findUnique({
         where: { id: conversationId },

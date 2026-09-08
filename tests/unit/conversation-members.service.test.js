@@ -38,10 +38,18 @@ function createRepository(context) {
   };
 }
 
+function createMembershipEvents() {
+  return {
+    membersAdded: vi.fn(),
+    memberRemoved: vi.fn(),
+  };
+}
+
 describe('group membership service', () => {
   it('allows an admin to add a regular member', async () => {
     const repository = createRepository(accessContext({ userId: adminId, role: 'ADMIN' }));
-    const service = createConversationsService(repository);
+    const membershipEvents = createMembershipEvents();
+    const service = createConversationsService(repository, { membershipEvents });
 
     await service.addMember(adminId, conversationId, { userId: newUserId, role: 'MEMBER' });
 
@@ -51,6 +59,10 @@ describe('group membership service', () => {
       actorRoles: ['OWNER', 'ADMIN'],
       userId: newUserId,
       role: 'MEMBER',
+    });
+    expect(membershipEvents.membersAdded).toHaveBeenCalledWith({
+      conversationId,
+      userIds: [newUserId],
     });
   });
 
@@ -68,7 +80,8 @@ describe('group membership service', () => {
     const repository = createRepository(
       accessContext({ userId: adminId, role: 'ADMIN' }, { userId: memberId, role: 'MEMBER' }),
     );
-    const service = createConversationsService(repository);
+    const membershipEvents = createMembershipEvents();
+    const service = createConversationsService(repository, { membershipEvents });
 
     await service.removeMember(adminId, conversationId, memberId);
 
@@ -78,6 +91,10 @@ describe('group membership service', () => {
       actorRoles: ['ADMIN'],
       userId: memberId,
       targetRole: 'MEMBER',
+    });
+    expect(membershipEvents.memberRemoved).toHaveBeenCalledWith({
+      conversationId,
+      userId: memberId,
     });
   });
 

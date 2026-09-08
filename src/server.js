@@ -1,14 +1,22 @@
 import { createServer } from 'node:http';
 
-import { app } from './app.js';
+import { createApp } from './app.js';
 import { db } from './config/db.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
+import { conversationsRepository } from './modules/conversations/conversations.repository.js';
+import { createConversationsService } from './modules/conversations/conversations.service.js';
+import { createConversationRoomCoordinator } from './realtime/conversation-rooms.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const conversationRooms = createConversationRoomCoordinator();
+const conversations = createConversationsService(conversationsRepository, {
+  membershipEvents: conversationRooms,
+});
+const app = createApp({ conversations });
 const server = createServer(app);
-const io = createSocketServer(server);
+const io = createSocketServer(server, { roomCoordinator: conversationRooms });
 
 let shutdownPromise;
 

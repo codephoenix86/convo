@@ -33,6 +33,7 @@ describe('Socket.IO authentication and user rooms', () => {
     socketServer = createSocketServer(httpServer, {
       allowedOrigins: [CLIENT_ORIGIN],
       accessTokenVerifier: tokenVerifier,
+      membershipRepository: { listConversationIdsForUser: vi.fn().mockResolvedValue([]) },
       log,
     });
 

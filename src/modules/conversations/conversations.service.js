@@ -17,8 +17,15 @@ const conversationListCursorSchema = z
     updatedAt: z.string().datetime(),
   })
   .strict();
+const noOpMembershipEvents = Object.freeze({
+  async membersAdded() {},
+  async memberRemoved() {},
+});
 
-export function createConversationsService(repository) {
+export function createConversationsService(
+  repository,
+  { membershipEvents = noOpMembershipEvents } = {},
+) {
   return {
     async createDirect(creatorId, participantId) {
       if (creatorId === participantId) {
@@ -32,6 +39,11 @@ export function createConversationsService(repository) {
         creatorId,
         participantId,
         directKey,
+      });
+
+      await membershipEvents.membersAdded({
+        conversationId: conversation.id,
+        userIds: conversation.members.map((member) => member.user.id),
       });
 
       return formatConversation(conversation);
@@ -49,6 +61,11 @@ export function createConversationsService(repository) {
         name,
         imageUrl,
         memberIds,
+      });
+
+      await membershipEvents.membersAdded({
+        conversationId: conversation.id,
+        userIds: conversation.members.map((member) => member.user.id),
       });
 
       return formatConversation(conversation);
@@ -74,6 +91,8 @@ export function createConversationsService(repository) {
         role,
       });
 
+      await membershipEvents.membersAdded({ conversationId, userIds: [userId] });
+
       return formatConversation(conversation);
     },
 
@@ -89,6 +108,8 @@ export function createConversationsService(repository) {
         userId,
         targetRole: target.role,
       });
+
+      await membershipEvents.memberRemoved({ conversationId, userId });
     },
 
     async updateMemberRole(actorId, conversationId, userId, role) {

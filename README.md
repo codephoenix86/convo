@@ -83,7 +83,7 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 
 ## Socket.IO connections
 
-Socket clients authenticate during the connection handshake by providing the access token as `auth.token`. Invalid or missing tokens are rejected before the socket can run application handlers. Each authenticated connection joins a private `user:<userId>` room so all of a user's active devices can receive account-level events.
+Socket clients authenticate during the connection handshake by providing the access token as `auth.token`. Invalid or missing tokens are rejected before the socket can run application handlers. Each authenticated connection joins a private `user:<userId>` room and server-derived `conversation:<conversationId>` rooms loaded from PostgreSQL. Clients cannot select their own rooms; successful conversation and membership writes synchronize room access for every connected device.
 
 ## Commands
 
@@ -142,5 +142,6 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
 - Socket handshakes require a valid access token, and connection logs expose safe total/per-user counts without logging credentials.
+- Conversation room access is rebuilt from persisted memberships and updated after successful direct/group membership writes.
 - `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.
