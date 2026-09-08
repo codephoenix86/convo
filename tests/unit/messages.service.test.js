@@ -19,9 +19,12 @@ function createFixture(context = memberContext()) {
   const accessRepository = {
     findAccessContext: vi.fn().mockResolvedValue(context),
   };
-  const service = createMessagesService({ repository, accessRepository });
+  const messageEvents = {
+    messageCreated: vi.fn(),
+  };
+  const service = createMessagesService({ repository, accessRepository, messageEvents });
 
-  return { repository, accessRepository, service };
+  return { repository, accessRepository, messageEvents, service };
 }
 
 function memberContext() {
@@ -56,9 +59,10 @@ describe('messages service', () => {
     fixture.repository.create.mockResolvedValue(result);
 
     await expect(
-      fixture.service.create(userId, conversationId, {
+      fixture.service.send(userId, {
+        conversationId,
         clientMessageId,
-        body: 'Hello',
+        body: '  Hello  ',
       }),
     ).resolves.toBe(result);
 
@@ -69,19 +73,61 @@ describe('messages service', () => {
       body: 'Hello',
       replyToId: null,
     });
+    expect(fixture.messageEvents.messageCreated).toHaveBeenCalledWith({
+      message: result.message,
+    });
+  });
+
+  it('returns an idempotent retry without publishing a duplicate event', async () => {
+    const fixture = createFixture();
+    const result = { message: message(), created: false };
+    fixture.repository.create.mockResolvedValue(result);
+
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Retry body is ignored by persistence',
+      }),
+    ).resolves.toBe(result);
+
+    expect(fixture.messageEvents.messageCreated).not.toHaveBeenCalled();
+  });
+
+  it('validates the complete send command before authorization or persistence', async () => {
+    const fixture = createFixture();
+
+    await expect(
+      fixture.service.send(userId, {
+        conversationId: 'not-a-uuid',
+        clientMessageId,
+        body: '   ',
+        senderId: userId,
+      }),
+    ).rejects.toMatchObject({
+      name: ValidationError.name,
+      details: expect.arrayContaining([
+        expect.objectContaining({ field: 'conversationId' }),
+        expect.objectContaining({ field: 'body' }),
+      ]),
+    });
+    expect(fixture.accessRepository.findAccessContext).not.toHaveBeenCalled();
+    expect(fixture.repository.create).not.toHaveBeenCalled();
+    expect(fixture.messageEvents.messageCreated).not.toHaveBeenCalled();
   });
 
   it('denies creation and history to nonmembers before message queries', async () => {
     const fixture = createFixture({ id: conversationId, type: 'DIRECT', members: [] });
 
     await expect(
-      fixture.service.create(userId, conversationId, { clientMessageId, body: 'Hello' }),
+      fixture.service.send(userId, { conversationId, clientMessageId, body: 'Hello' }),
     ).rejects.toBeInstanceOf(NotFoundError);
     await expect(
       fixture.service.listHistory(userId, conversationId, { limit: 30 }),
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(fixture.repository.create).not.toHaveBeenCalled();
     expect(fixture.repository.listHistory).not.toHaveBeenCalled();
+    expect(fixture.messageEvents.messageCreated).not.toHaveBeenCalled();
   });
 
   it('returns deterministic older-message pages and a conversation-bound cursor', async () => {

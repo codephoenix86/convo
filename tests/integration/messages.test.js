@@ -26,7 +26,7 @@ const message = {
 
 function createMessages() {
   return {
-    create: vi.fn(),
+    send: vi.fn(),
     listHistory: vi.fn(),
   };
 }
@@ -44,7 +44,7 @@ describe('POST /conversations/:id/messages', () => {
     [false, 200],
   ])('returns the canonical message when created is %s', async (created, statusCode) => {
     const messages = createMessages();
-    messages.create.mockResolvedValue({ message, created });
+    messages.send.mockResolvedValue({ message, created });
 
     const response = await request(createAuthenticatedApp(messages))
       .post(`/conversations/${conversationId}/messages`)
@@ -52,7 +52,8 @@ describe('POST /conversations/:id/messages', () => {
       .send({ clientMessageId, body: '  Hello there  ' })
       .expect(statusCode);
 
-    expect(messages.create).toHaveBeenCalledWith(userId, conversationId, {
+    expect(messages.send).toHaveBeenCalledWith(userId, {
+      conversationId,
       clientMessageId,
       body: 'Hello there',
     });
@@ -84,7 +85,7 @@ describe('POST /conversations/:id/messages', () => {
       .send({ clientMessageId, body: 'Hello', senderId: userId })
       .expect(400);
 
-    expect(messages.create).not.toHaveBeenCalled();
+    expect(messages.send).not.toHaveBeenCalled();
   });
 
   it('rejects unauthenticated message creation', async () => {
@@ -95,7 +96,7 @@ describe('POST /conversations/:id/messages', () => {
       .send({ clientMessageId, body: 'Hello' })
       .expect(401);
 
-    expect(messages.create).not.toHaveBeenCalled();
+    expect(messages.send).not.toHaveBeenCalled();
   });
 });
 

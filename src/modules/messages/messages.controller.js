@@ -1,11 +1,10 @@
 export function createMessagesController(messages) {
   return {
     async create(request, response) {
-      const result = await messages.create(
-        request.user.id,
-        request.validated.params.id,
-        request.body,
-      );
+      const result = await messages.send(request.user.id, {
+        ...request.body,
+        conversationId: request.validated.params.id,
+      });
 
       return response
         .status(result.created ? 201 : 200)

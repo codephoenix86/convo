@@ -6,7 +6,10 @@ import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { conversationsRepository } from './modules/conversations/conversations.repository.js';
 import { createConversationsService } from './modules/conversations/conversations.service.js';
+import { messagesRepository } from './modules/messages/messages.repository.js';
+import { createMessagesService } from './modules/messages/messages.service.js';
 import { createConversationRoomCoordinator } from './realtime/conversation-rooms.js';
+import { createRealtimeMessageEvents } from './realtime/message-events.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -14,9 +17,16 @@ const conversationRooms = createConversationRoomCoordinator();
 const conversations = createConversationsService(conversationsRepository, {
   membershipEvents: conversationRooms,
 });
-const app = createApp({ conversations });
+const messageEvents = createRealtimeMessageEvents();
+const messages = createMessagesService({
+  repository: messagesRepository,
+  accessRepository: conversationsRepository,
+  messageEvents,
+});
+const app = createApp({ conversations, messages });
 const server = createServer(app);
 const io = createSocketServer(server, { roomCoordinator: conversationRooms });
+messageEvents.attach(io);
 
 let shutdownPromise;
 

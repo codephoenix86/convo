@@ -143,5 +143,6 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
 - Socket handshakes require a valid access token, and connection logs expose safe total/per-user counts without logging credentials.
 - Conversation room access is rebuilt from persisted memberships and updated after successful direct/group membership writes.
+- Message sends use one transport-independent service for validation, authorization, idempotent persistence, and `message:new` publication; retries are not rebroadcast.
 - `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.

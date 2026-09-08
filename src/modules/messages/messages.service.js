@@ -5,6 +5,7 @@ import { ValidationError } from '../../lib/errors.js';
 import { requireConversationMember } from '../conversations/conversation-access.js';
 import { conversationsRepository } from '../conversations/conversations.repository.js';
 import { messagesRepository } from './messages.repository.js';
+import { sendMessageCommandSchema } from './messages.validation.js';
 
 const messageHistoryCursorSchema = z
   .object({
@@ -13,20 +14,34 @@ const messageHistoryCursorSchema = z
     createdAt: z.string().datetime(),
   })
   .strict();
+const noOpMessageEvents = Object.freeze({
+  async messageCreated() {},
+});
 
-export function createMessagesService({ repository, accessRepository }) {
+export function createMessagesService({
+  repository,
+  accessRepository,
+  messageEvents = noOpMessageEvents,
+}) {
   return {
-    async create(userId, conversationId, input) {
-      const context = await accessRepository.findAccessContext(conversationId, [userId]);
+    async send(userId, input) {
+      const command = parseSendMessageCommand(input);
+      const context = await accessRepository.findAccessContext(command.conversationId, [userId]);
       requireConversationMember(context, userId);
 
-      return repository.create({
-        conversationId,
+      const result = await repository.create({
+        conversationId: command.conversationId,
         senderId: userId,
-        clientMessageId: input.clientMessageId,
-        body: input.body,
-        replyToId: input.replyToId ?? null,
+        clientMessageId: command.clientMessageId,
+        body: command.body,
+        replyToId: command.replyToId ?? null,
       });
+
+      if (result.created) {
+        await messageEvents.messageCreated({ message: result.message });
+      }
+
+      return result;
     },
 
     async listHistory(userId, conversationId, { cursor: encodedCursor, limit }) {
@@ -63,6 +78,22 @@ export function createMessagesService({ repository, accessRepository }) {
       };
     },
   };
+}
+
+function parseSendMessageCommand(input) {
+  const result = sendMessageCommandSchema.safeParse(input);
+
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new ValidationError(
+    'Message validation failed',
+    result.error.issues.map((issue) => ({
+      field: issue.path.join('.') || 'message',
+      message: issue.message,
+    })),
+  );
 }
 
 export const messagesService = createMessagesService({
