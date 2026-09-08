@@ -55,6 +55,11 @@ async function initializeConnectedSocket(socket, ready, connectionTracker, log) 
 
     if (initialized) {
       trackSocket(socket, connectionTracker, log);
+      socket.emit('session:ready', {
+        connectionId: socket.id,
+        serverTime: new Date().toISOString(),
+        syncRequired: true,
+      });
     }
   } catch (error) {
     log.error(

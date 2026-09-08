@@ -87,6 +87,12 @@ Socket clients authenticate during the connection handshake by providing the acc
 
 An authenticated client sends `message:send` with `{ conversationId, clientMessageId, body, replyToId? }` and an acknowledgement callback. Success acknowledgements use `{ ok: true, data: { message, created } }`; rejected events use `{ ok: false, error: { code, message, details? } }`. A newly persisted message is broadcast as `message:new` with `{ message }`. Authorization is checked again for every send even though the socket initially joined authorized rooms.
 
+### Reconnect and resynchronization
+
+After every initial connection or reconnect, the server authenticates the current `auth.token`, reloads conversation memberships from PostgreSQL, joins only those rooms, and then emits `session:ready` with `{ connectionId, serverTime, syncRequired: true }`. Clients should update `socket.auth.token` before reconnecting when they refresh an access token and should not send application events until `session:ready` arrives. A rejected reconnect must obtain a valid token before explicitly connecting again.
+
+Socket events are live notifications, not a durable replay log. Whenever `session:ready` reports `syncRequired: true`, fetch `GET /conversations` from its first page, then fetch the newest page of `GET /conversations/:id/messages` for conversations that may have changed. Continue through older pages until reaching a locally known message when needed. Merge by the canonical message `id`, use `clientMessageId` to reconcile optimistic sends, and treat server IDs and timestamps as authoritative. This recovers messages missed while offline without assuming every socket event was delivered.
+
 ## Commands
 
 | Command                     | Purpose                                                |
@@ -139,12 +145,13 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
-- REST and future Socket.IO sends share one message service for authorization and idempotent persistence.
+- REST and Socket.IO sends share one message service for authorization and idempotent persistence.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
 - Socket handshakes require a valid access token, and connection logs expose safe total/per-user counts without logging credentials.
 - Conversation room access is rebuilt from persisted memberships and updated after successful direct/group membership writes.
 - Message sends use one transport-independent service for validation, authorization, idempotent persistence, and `message:new` publication; retries are not rebroadcast.
+- Every connection emits `session:ready` after authentication and room restoration so clients can resynchronize missed durable state through REST.
 - `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.
