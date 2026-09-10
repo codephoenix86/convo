@@ -48,6 +48,10 @@ describe('environment configuration', () => {
       JWT_ISSUER: 'convo-api-test',
       JWT_AUDIENCE: 'convo-client-test',
       CLIENT_ORIGINS: ['http://localhost:5173'],
+      OBJECT_STORAGE_REGION: 'us-east-1',
+      OBJECT_STORAGE_BUCKET: 'convo-test-attachments',
+      OBJECT_STORAGE_FORCE_PATH_STYLE: true,
+      OBJECT_STORAGE_PRESIGN_TTL_SECONDS: 300,
     });
   });
 
@@ -89,6 +93,31 @@ describe('environment configuration', () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('CLIENT_ORIGINS: contains an invalid origin');
   });
+
+  it('fails fast when object-storage credentials are missing', () => {
+    const environment = createEnvironment();
+    delete environment.OBJECT_STORAGE_ACCESS_KEY_ID;
+
+    const result = runEnvironmentImport(environment);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('OBJECT_STORAGE_ACCESS_KEY_ID: is required');
+  });
+
+  it('normalizes an optional S3-compatible endpoint and path-style setting', () => {
+    const environment = createEnvironment({
+      OBJECT_STORAGE_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+      OBJECT_STORAGE_FORCE_PATH_STYLE: 'false',
+    });
+
+    const result = runEnvironmentImport(environment, true);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      OBJECT_STORAGE_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+      OBJECT_STORAGE_FORCE_PATH_STYLE: false,
+    });
+  });
 });
 
 function createEnvironment(overrides = {}) {
@@ -105,6 +134,12 @@ function createEnvironment(overrides = {}) {
     JWT_ISSUER: 'convo-api-test',
     JWT_AUDIENCE: 'convo-client-test',
     CLIENT_ORIGINS: 'http://localhost:5173',
+    OBJECT_STORAGE_REGION: 'us-east-1',
+    OBJECT_STORAGE_BUCKET: 'convo-test-attachments',
+    OBJECT_STORAGE_ACCESS_KEY_ID: 'test-object-storage-access-key',
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: 'test-object-storage-secret-key',
+    OBJECT_STORAGE_FORCE_PATH_STYLE: 'true',
+    OBJECT_STORAGE_PRESIGN_TTL_SECONDS: '300',
     ...overrides,
   };
 }

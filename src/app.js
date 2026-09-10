@@ -4,6 +4,8 @@ import { db } from './config/db.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
+import { createAttachmentsRouter } from './modules/attachments/attachments.routes.js';
+import { attachmentsService } from './modules/attachments/attachments.service.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { authService } from './modules/auth/auth.service.js';
 import { verifyAccessToken } from './modules/auth/tokens.js';
@@ -26,6 +28,7 @@ export function createApp({
   users = usersService,
   conversations = conversationsService,
   messages = messagesService,
+  attachments = attachmentsService,
   accessTokenVerifier = verifyAccessToken,
   registerRoutes,
   requestLogging = requestLogger,
@@ -43,6 +46,7 @@ export function createApp({
   app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));
   app.use('/conversations', createMessagesRouter({ messages, accessTokenVerifier }));
   app.use('/messages', createMessageMutationsRouter({ messages, accessTokenVerifier }));
+  app.use('/attachments', createAttachmentsRouter({ attachments, accessTokenVerifier }));
 
   if (registerRoutes) {
     registerRoutes(app);

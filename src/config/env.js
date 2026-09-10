@@ -44,6 +44,15 @@ const clientOriginsSchema = z
     return normalizedOrigins;
   });
 
+const optionalHttpUrlSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z
+    .string()
+    .url()
+    .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), 'must use HTTP(S)')
+    .optional(),
+);
+
 const environmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().trim().min(1, 'must not be empty').default('0.0.0.0'),
@@ -63,6 +72,16 @@ const environmentSchema = z.object({
   JWT_ISSUER: z.string().trim().min(1).max(100).default('convo-api'),
   JWT_AUDIENCE: z.string().trim().min(1).max(100).default('convo-client'),
   CLIENT_ORIGINS: clientOriginsSchema,
+  OBJECT_STORAGE_REGION: z.string({ error: 'is required' }).trim().min(1, 'is required'),
+  OBJECT_STORAGE_BUCKET: z.string({ error: 'is required' }).trim().min(1, 'is required').max(255),
+  OBJECT_STORAGE_ENDPOINT: optionalHttpUrlSchema,
+  OBJECT_STORAGE_ACCESS_KEY_ID: z.string({ error: 'is required' }).trim().min(1, 'is required'),
+  OBJECT_STORAGE_SECRET_ACCESS_KEY: z.string({ error: 'is required' }).min(1, 'is required'),
+  OBJECT_STORAGE_FORCE_PATH_STYLE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  OBJECT_STORAGE_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
 });
 
 loadLocalEnvironment();

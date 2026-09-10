@@ -16,6 +16,12 @@ export default defineConfig({
       REFRESH_TOKEN_TTL_DAYS: '30',
       JWT_ISSUER: 'convo-api-test',
       JWT_AUDIENCE: 'convo-client-test',
+      OBJECT_STORAGE_REGION: 'us-east-1',
+      OBJECT_STORAGE_BUCKET: 'convo-test-attachments',
+      OBJECT_STORAGE_ACCESS_KEY_ID: 'test-object-storage-access-key',
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: 'test-object-storage-secret-key',
+      OBJECT_STORAGE_FORCE_PATH_STYLE: 'true',
+      OBJECT_STORAGE_PRESIGN_TTL_SECONDS: '300',
     },
   },
 });

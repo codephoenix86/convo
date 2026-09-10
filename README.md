@@ -9,6 +9,7 @@ Milestones A and B provide the application foundation and REST core: validated c
 - Node.js 24 LTS
 - npm 11 or later
 - PostgreSQL 18 or another Prisma-supported PostgreSQL release
+- An S3-compatible object-storage bucket
 
 ## Local setup
 
@@ -81,8 +82,17 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | PUT    | `/conversations/:id/read`            | Advance the caller's read position monotonically.       |
 | PATCH  | `/messages/:id`                      | Edit a sender-owned text message.                       |
 | DELETE | `/messages/:id`                      | Soft-delete a sender-owned text message.                |
+| POST   | `/attachments/upload-init`           | Create an authorized, short-lived signed upload.        |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
+
+## Attachment uploads
+
+Call `POST /attachments/upload-init` with `{ conversationId, fileName, mimeType, size }`. The caller must be a current conversation member. JPEG, PNG, WebP, GIF, PDF, and plain-text files up to 10 MiB are accepted, and the extension must match the declared MIME type.
+
+The response contains a server-generated `storageKey`, a short-lived signed `url`, `method: "PUT"`, required headers, and `expiresAt`. Upload the exact bytes directly to object storage using that method and those headers; binary data never passes through the API or PostgreSQL. Keys are scoped to the authenticated user and conversation, and the signed object metadata records both identities plus the declared size.
+
+Keep the bucket private and configure its CORS policy to allow `PUT` with `Content-Type` from the browser origins listed in `CLIENT_ORIGINS`.
 
 ## Socket.IO connections
 
@@ -128,21 +138,28 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 
 ## Environment variables
 
-| Variable                         | Purpose                                       |
-| -------------------------------- | --------------------------------------------- |
-| `NODE_ENV`                       | `development`, `test`, or `production`.       |
-| `HOST`                           | HTTP bind address.                            |
-| `PORT`                           | HTTP port from 1 through 65535.               |
-| `LOG_LEVEL`                      | Pino log threshold.                           |
-| `DATABASE_URL`                   | PostgreSQL connection URL.                    |
-| `TEST_DATABASE_URL`              | Disposable PostgreSQL database used by tests. |
-| `DATABASE_CONNECTION_TIMEOUT_MS` | Database connection timeout from 100–30000ms. |
-| `ACCESS_TOKEN_SECRET`            | Secret of at least 32 characters for JWTs.    |
-| `ACCESS_TOKEN_TTL_SECONDS`       | Access-token lifetime from 60–3600 seconds.   |
-| `REFRESH_TOKEN_TTL_DAYS`         | Refresh-session lifetime from 1–90 days.      |
-| `JWT_ISSUER`                     | Expected access-token issuer.                 |
-| `JWT_AUDIENCE`                   | Expected access-token audience.               |
-| `CLIENT_ORIGINS`                 | Comma-separated browser origin allowlist.     |
+| Variable                             | Purpose                                       |
+| ------------------------------------ | --------------------------------------------- |
+| `NODE_ENV`                           | `development`, `test`, or `production`.       |
+| `HOST`                               | HTTP bind address.                            |
+| `PORT`                               | HTTP port from 1 through 65535.               |
+| `LOG_LEVEL`                          | Pino log threshold.                           |
+| `DATABASE_URL`                       | PostgreSQL connection URL.                    |
+| `TEST_DATABASE_URL`                  | Disposable PostgreSQL database used by tests. |
+| `DATABASE_CONNECTION_TIMEOUT_MS`     | Database connection timeout from 100–30000ms. |
+| `ACCESS_TOKEN_SECRET`                | Secret of at least 32 characters for JWTs.    |
+| `ACCESS_TOKEN_TTL_SECONDS`           | Access-token lifetime from 60–3600 seconds.   |
+| `REFRESH_TOKEN_TTL_DAYS`             | Refresh-session lifetime from 1–90 days.      |
+| `JWT_ISSUER`                         | Expected access-token issuer.                 |
+| `JWT_AUDIENCE`                       | Expected access-token audience.               |
+| `CLIENT_ORIGINS`                     | Comma-separated browser origin allowlist.     |
+| `OBJECT_STORAGE_REGION`              | S3-compatible bucket region.                  |
+| `OBJECT_STORAGE_BUCKET`              | Private attachment bucket name.               |
+| `OBJECT_STORAGE_ENDPOINT`            | Optional HTTP(S) endpoint for R2/MinIO/etc.   |
+| `OBJECT_STORAGE_ACCESS_KEY_ID`       | Object-storage access-key identifier.         |
+| `OBJECT_STORAGE_SECRET_ACCESS_KEY`   | Object-storage secret access key.             |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE`    | Use path-style bucket addressing.             |
+| `OBJECT_STORAGE_PRESIGN_TTL_SECONDS` | Signed-upload lifetime from 60–900 seconds.   |
 
 ## Operational behavior
 
@@ -162,6 +179,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
 - REST and Socket.IO message mutations share sender-ownership rules, atomically update PostgreSQL, and redact soft-deleted bodies from responses and broadcasts.
+- Attachment upload initialization validates membership, MIME type, extension, and a 10 MiB size limit before issuing a user-scoped, short-lived S3-compatible upload URL.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
