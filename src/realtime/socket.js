@@ -9,6 +9,7 @@ import { createSocketAuthenticator } from './authenticate.js';
 import { createConversationRoomCoordinator } from './conversation-rooms.js';
 import { registerMessageHandlers } from './handlers/messages.js';
 import { registerTypingHandlers } from './handlers/typing.js';
+import { createPresenceCoordinator } from './presence.js';
 import { createTypingCoordinator } from './typing.js';
 
 export function createSocketServer(
@@ -18,6 +19,7 @@ export function createSocketServer(
     accessTokenVerifier = verifyAccessToken,
     membershipRepository = conversationsRepository,
     roomCoordinator = createConversationRoomCoordinator(),
+    presenceCoordinator = createPresenceCoordinator(),
     typingCoordinator = createTypingCoordinator(),
     typingRateLimit,
     messages = messagesService,
@@ -25,8 +27,6 @@ export function createSocketServer(
   } = {},
 ) {
   const allowedOriginSet = new Set(allowedOrigins);
-  const connectionTracker = createConnectionTracker();
-
   const io = new Server(httpServer, {
     serveClient: false,
     cors: {
@@ -41,6 +41,7 @@ export function createSocketServer(
   });
 
   roomCoordinator.attach(io);
+  presenceCoordinator.attach(io);
   typingCoordinator.attach(io);
   io.use(createSocketAuthenticator(accessTokenVerifier, log));
   io.use(createConversationRoomInitializer(roomCoordinator, membershipRepository, log));
@@ -55,23 +56,24 @@ export function createSocketServer(
       rateLimit: typingRateLimit,
       log,
     });
-    void initializeConnectedSocket(socket, ready, connectionTracker, log);
+    void initializeConnectedSocket(socket, ready, presenceCoordinator, log);
   });
 
   return io;
 }
 
-async function initializeConnectedSocket(socket, ready, connectionTracker, log) {
+async function initializeConnectedSocket(socket, ready, presenceCoordinator, log) {
   try {
     const initialized = await ready;
 
     if (initialized) {
-      trackSocket(socket, connectionTracker, log);
+      trackSocket(socket, presenceCoordinator, log);
       socket.emit('session:ready', {
         connectionId: socket.id,
         serverTime: new Date().toISOString(),
         syncRequired: true,
       });
+      presenceCoordinator.sendSnapshot(socket);
     }
   } catch (error) {
     log.error(
@@ -87,14 +89,17 @@ async function initializeConnectedSocket(socket, ready, connectionTracker, log) 
   }
 }
 
-function trackSocket(socket, connectionTracker, log) {
+function trackSocket(socket, presenceCoordinator, log) {
   const userId = socket.data.user.id;
   const connectedAt = Date.now();
-  const counts = connectionTracker.connect(userId);
+  const counts = presenceCoordinator.connectSocket(socket);
+  let disconnectedCounts;
+
+  socket.once('disconnecting', () => {
+    disconnectedCounts = presenceCoordinator.disconnectSocket(socket);
+  });
 
   socket.once('disconnect', (reason) => {
-    const updatedCounts = connectionTracker.disconnect(userId);
-
     log.info(
       {
         event: 'socket_disconnected',
@@ -102,7 +107,7 @@ function trackSocket(socket, connectionTracker, log) {
         userId,
         reason,
         connectedMs: Date.now() - connectedAt,
-        ...updatedCounts,
+        ...disconnectedCounts,
       },
       'Socket disconnected',
     );
@@ -145,39 +150,4 @@ function createConversationRoomInitializer(roomCoordinator, membershipRepository
       next(connectionError);
     }
   };
-}
-
-function createConnectionTracker() {
-  let activeConnections = 0;
-  const connectionsByUser = new Map();
-
-  return {
-    connect(userId) {
-      activeConnections += 1;
-      connectionsByUser.set(userId, (connectionsByUser.get(userId) ?? 0) + 1);
-
-      return snapshot(userId);
-    },
-
-    disconnect(userId) {
-      activeConnections = Math.max(0, activeConnections - 1);
-      const userConnections = Math.max(0, (connectionsByUser.get(userId) ?? 1) - 1);
-
-      if (userConnections === 0) {
-        connectionsByUser.delete(userId);
-      } else {
-        connectionsByUser.set(userId, userConnections);
-      }
-
-      return snapshot(userId);
-    },
-  };
-
-  function snapshot(userId) {
-    return {
-      activeConnections,
-      activeUsers: connectionsByUser.size,
-      userConnections: connectionsByUser.get(userId) ?? 0,
-    };
-  }
 }

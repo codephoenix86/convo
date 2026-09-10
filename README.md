@@ -92,6 +92,8 @@ Clients acknowledge receipt with `message:delivered` and advance their read posi
 
 Typing indicators use `typing:start` and `typing:stop` with `{ conversationId }` plus an acknowledgement callback. The server derives the user from the authenticated socket, rechecks conversation membership, and broadcasts `{ typing: { conversationId, userId, isTyping, expiresAt } }`. Repeated starts refresh a five-second expiry while broadcasts are debounced; bursts are rate limited, disconnects clear that socket's state, and a user remains typing while any of their connected devices is still active. Typing state is intentionally ephemeral and is never written to PostgreSQL.
 
+Presence is server-generated; clients do not emit presence claims. After `session:ready`, each socket receives `presence:snapshot` containing online users visible through its authorized conversation rooms. The first active device for a user broadcasts `presence:update` with `{ presence: { userId, isOnline: true, changedAt } }`; only the final device disconnect broadcasts the corresponding offline update. Presence is process-local and ephemeral until the optional Redis scaling milestone.
+
 ### Reconnect and resynchronization
 
 After every initial connection or reconnect, the server authenticates the current `auth.token`, reloads conversation memberships from PostgreSQL, joins only those rooms, and then emits `session:ready` with `{ connectionId, serverTime, syncRequired: true }`. Clients should update `socket.auth.token` before reconnecting when they refresh an access token and should not send application events until `session:ready` arrives. A rejected reconnect must obtain a valid token before explicitly connecting again.
@@ -151,6 +153,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Read positions use canonical message timestamps and IDs, never move backward, and are returned with conversation members for resynchronization.
 - Delivery receipts are durable per-member positions; read and delivery updates are authorized per event and broadcast only after persisted advancement.
 - Typing indicators are authorized, burst-limited, broadcast-coalesced, multi-device aware, and automatically expire after five seconds.
+- Presence snapshots and updates are derived from authenticated sockets and shared authorized rooms; multi-device connection counts prevent false offline transitions.
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
