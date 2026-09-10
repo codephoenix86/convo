@@ -2,7 +2,15 @@
 
 A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, and Prisma. Redis-backed horizontal scaling is planned after single-instance real-time correctness.
 
-Milestones A and B provide the application foundation and REST core: validated configuration, migrations, health checks, structured logging, authentication and session rotation, users, direct/group conversations, role-based membership, persisted messages, and cursor-paginated history.
+Milestones A–D provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, and private S3-compatible attachments. Redis-backed multi-instance coordination remains an optional Milestone F concern.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Database model and delete behavior](docs/data-model.md)
+- [HTTP API contract and examples](docs/api.md)
+- [Socket.IO event contract](docs/socket-events.md)
+- [Engineering decisions and trade-offs](docs/decisions.md)
 
 ## Requirements
 
@@ -125,9 +133,10 @@ Socket events are live notifications, not a durable replay log. Whenever `sessio
 | --------------------------- | ------------------------------------------------------ |
 | `npm run dev`               | Start with Node's watch mode.                          |
 | `npm start`                 | Start the server normally.                             |
-| `npm test`                  | Run fast unit and HTTP contract tests once.            |
+| `npm test`                  | Run unit, HTTP, and realtime tests once.               |
 | `npm run test:unit`         | Run unit tests.                                        |
 | `npm run test:integration`  | Run HTTP, configuration, and lifecycle contract tests. |
+| `npm run test:acceptance`   | Run the realtime messaging lifecycle acceptance flow.  |
 | `npm run test:database`     | Migrate and test against an isolated PostgreSQL DB.    |
 | `npm run lint`              | Check JavaScript with ESLint.                          |
 | `npm run format:check`      | Check formatting with Prettier.                        |

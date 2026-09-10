@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:acceptance": "vitest run tests/realtime/messaging-lifecycle.acceptance.test.js",
     "test:database": "node scripts/run-database-tests.js",
     "postinstall": "node --env-file=.env.example --env-file-if-exists=.env ./node_modules/prisma/build/index.js generate",
     "db:generate": "prisma generate",
