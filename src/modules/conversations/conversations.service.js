@@ -166,6 +166,8 @@ function formatConversation(conversation, unreadCount) {
     members: conversation.members.map((member) => ({
       role: member.role,
       joinedAt: member.joinedAt,
+      lastDeliveredMessageId: member.lastDeliveredMessageId,
+      lastDeliveredAt: member.lastDeliveredAt,
       lastReadMessageId: member.lastReadMessageId,
       lastReadAt: member.lastReadAt,
       user: member.user,

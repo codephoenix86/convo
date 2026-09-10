@@ -112,10 +112,12 @@ describe('messages repository', () => {
     const readState = {
       conversationId,
       userId,
+      lastDeliveredMessageId: messageId,
+      lastDeliveredAt: createdAt,
       lastReadMessageId: messageId,
       lastReadAt: createdAt,
     };
-    const database = {
+    const transaction = {
       message: {
         findFirst: vi.fn().mockResolvedValue({ id: messageId, createdAt }),
       },
@@ -124,16 +126,40 @@ describe('messages repository', () => {
         findUnique: vi.fn().mockResolvedValue(readState),
       },
     };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
     const repository = createMessagesRepository(database);
 
     await expect(
       repository.advanceReadPosition({ conversationId, userId, messageId }),
-    ).resolves.toBe(readState);
-    expect(database.message.findFirst).toHaveBeenCalledWith({
+    ).resolves.toEqual({
+      receipt: {
+        conversationId,
+        userId,
+        lastReadMessageId: messageId,
+        lastReadAt: createdAt,
+      },
+      advanced: true,
+    });
+    expect(transaction.message.findFirst).toHaveBeenCalledWith({
       where: { id: messageId, conversationId },
       select: { id: true, createdAt: true },
     });
-    expect(database.conversationMember.updateMany).toHaveBeenCalledWith({
+    expect(transaction.conversationMember.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        conversationId,
+        userId,
+        OR: [
+          { lastDeliveredAt: null },
+          { lastDeliveredAt: { lt: createdAt } },
+          {
+            lastDeliveredAt: createdAt,
+            lastDeliveredMessageId: { lt: messageId },
+          },
+        ],
+      },
+      data: { lastDeliveredMessageId: messageId, lastDeliveredAt: createdAt },
+    });
+    expect(transaction.conversationMember.updateMany).toHaveBeenNthCalledWith(2, {
       where: {
         conversationId,
         userId,
@@ -147,11 +173,45 @@ describe('messages repository', () => {
     });
   });
 
+  it('persists a delivery position without changing read state', async () => {
+    const deliveredState = {
+      conversationId,
+      userId,
+      lastDeliveredMessageId: messageId,
+      lastDeliveredAt: createdAt,
+    };
+    const transaction = {
+      message: { findFirst: vi.fn().mockResolvedValue({ id: messageId, createdAt }) },
+      conversationMember: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue(deliveredState),
+      },
+    };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.advanceDeliveredPosition({ conversationId, userId, messageId }),
+    ).resolves.toEqual({ receipt: deliveredState, advanced: false });
+    expect(transaction.conversationMember.updateMany).toHaveBeenCalledOnce();
+    expect(transaction.conversationMember.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          conversationId: true,
+          userId: true,
+          lastDeliveredMessageId: true,
+          lastDeliveredAt: true,
+        },
+      }),
+    );
+  });
+
   it('rejects a read target outside the requested conversation', async () => {
-    const database = {
+    const transaction = {
       message: { findFirst: vi.fn().mockResolvedValue(null) },
       conversationMember: { updateMany: vi.fn(), findUnique: vi.fn() },
     };
+    const database = { $transaction: vi.fn((operation) => operation(transaction)) };
     const repository = createMessagesRepository(database);
 
     await expect(
@@ -159,6 +219,6 @@ describe('messages repository', () => {
     ).rejects.toEqual(
       expect.objectContaining({ name: NotFoundError.name, message: 'Message not found' }),
     );
-    expect(database.conversationMember.updateMany).not.toHaveBeenCalled();
+    expect(transaction.conversationMember.updateMany).not.toHaveBeenCalled();
   });
 });

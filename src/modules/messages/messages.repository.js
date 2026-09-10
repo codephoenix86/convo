@@ -21,6 +21,16 @@ const messageSelect = Object.freeze({
     },
   },
 });
+const receiptPositions = Object.freeze({
+  delivered: Object.freeze({
+    messageId: 'lastDeliveredMessageId',
+    timestamp: 'lastDeliveredAt',
+  }),
+  read: Object.freeze({
+    messageId: 'lastReadMessageId',
+    timestamp: 'lastReadAt',
+  }),
+});
 
 export function createMessagesRepository(database = db) {
   return {
@@ -104,52 +114,103 @@ export function createMessagesRepository(database = db) {
       });
     },
 
-    async advanceReadPosition({ conversationId, userId, messageId }) {
-      const targetMessage = await database.message.findFirst({
-        where: { id: messageId, conversationId },
-        select: { id: true, createdAt: true },
+    advanceDeliveredPosition({ conversationId, userId, messageId }) {
+      return advanceReceiptPositions(database, {
+        conversationId,
+        userId,
+        messageId,
+        positions: ['delivered'],
+        primaryPosition: 'delivered',
       });
+    },
 
-      if (!targetMessage) {
-        throw new NotFoundError('Message not found');
-      }
+    advanceReadPosition({ conversationId, userId, messageId }) {
+      return advanceReceiptPositions(database, {
+        conversationId,
+        userId,
+        messageId,
+        positions: ['delivered', 'read'],
+        primaryPosition: 'read',
+      });
+    },
+  };
+}
 
-      await database.conversationMember.updateMany({
+function advanceReceiptPositions(
+  database,
+  { conversationId, userId, messageId, positions, primaryPosition },
+) {
+  return database.$transaction(async (transaction) => {
+    const targetMessage = await transaction.message.findFirst({
+      where: { id: messageId, conversationId },
+      select: { id: true, createdAt: true },
+    });
+
+    if (!targetMessage) {
+      throw new NotFoundError('Message not found');
+    }
+
+    const updateCounts = new Map();
+
+    for (const position of positions) {
+      const fields = receiptPositions[position];
+      const update = await transaction.conversationMember.updateMany({
         where: {
           conversationId,
           userId,
           OR: [
-            { lastReadAt: null },
-            { lastReadAt: { lt: targetMessage.createdAt } },
+            { [fields.timestamp]: null },
+            { [fields.timestamp]: { lt: targetMessage.createdAt } },
             {
-              lastReadAt: targetMessage.createdAt,
-              lastReadMessageId: { lt: targetMessage.id },
+              [fields.timestamp]: targetMessage.createdAt,
+              [fields.messageId]: { lt: targetMessage.id },
             },
           ],
         },
         data: {
-          lastReadMessageId: targetMessage.id,
-          lastReadAt: targetMessage.createdAt,
+          [fields.messageId]: targetMessage.id,
+          [fields.timestamp]: targetMessage.createdAt,
         },
       });
 
-      const membership = await database.conversationMember.findUnique({
-        where: { conversationId_userId: { conversationId, userId } },
-        select: {
-          conversationId: true,
-          userId: true,
-          lastReadMessageId: true,
-          lastReadAt: true,
-        },
-      });
+      updateCounts.set(position, update.count);
+    }
 
-      if (!membership) {
-        throw new NotFoundError('Conversation not found');
-      }
+    const selectedFields = Object.fromEntries(
+      positions.flatMap((position) => {
+        const fields = receiptPositions[position];
 
-      return membership;
-    },
-  };
+        return [
+          [fields.messageId, true],
+          [fields.timestamp, true],
+        ];
+      }),
+    );
+    const membership = await transaction.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId, userId } },
+      select: {
+        conversationId: true,
+        userId: true,
+        ...selectedFields,
+      },
+    });
+
+    if (!membership) {
+      throw new NotFoundError('Conversation not found');
+    }
+
+    const primaryFields = receiptPositions[primaryPosition];
+
+    return {
+      receipt: {
+        conversationId: membership.conversationId,
+        userId: membership.userId,
+        [primaryFields.messageId]: membership[primaryFields.messageId],
+        [primaryFields.timestamp]: membership[primaryFields.timestamp],
+      },
+      advanced: updateCounts.get(primaryPosition) === 1,
+    };
+  });
 }
 
 function isUniqueConstraintError(error) {

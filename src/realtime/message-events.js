@@ -17,6 +17,22 @@ export function createRealtimeMessageEvents() {
 
       socketServer.to(getConversationRoom(message.conversationId)).emit('message:new', { message });
     },
+
+    async messageDelivered({ receipt }) {
+      const socketServer = requireSocketServer(io);
+
+      socketServer
+        .to(getConversationRoom(receipt.conversationId))
+        .emit('message:delivered', { receipt });
+    },
+
+    async conversationRead({ receipt }) {
+      const socketServer = requireSocketServer(io);
+
+      socketServer
+        .to(getConversationRoom(receipt.conversationId))
+        .emit('conversation:read', { receipt });
+    },
   };
 }
 

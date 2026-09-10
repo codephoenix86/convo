@@ -79,19 +79,23 @@ model Conversation {
 }
 
 model ConversationMember {
-  conversationId    String           @map("conversation_id") @db.Uuid
-  userId            String           @map("user_id") @db.Uuid
-  role              ConversationRole @default(MEMBER)
-  joinedAt          DateTime         @default(now()) @map("joined_at") @db.Timestamptz(3)
-  lastReadMessageId String?          @map("last_read_message_id") @db.Uuid
-  lastReadAt        DateTime?        @map("last_read_at") @db.Timestamptz(3)
+  conversationId         String           @map("conversation_id") @db.Uuid
+  userId                 String           @map("user_id") @db.Uuid
+  role                   ConversationRole @default(MEMBER)
+  joinedAt               DateTime         @default(now()) @map("joined_at") @db.Timestamptz(3)
+  lastDeliveredMessageId String?          @map("last_delivered_message_id") @db.Uuid
+  lastDeliveredAt        DateTime?        @map("last_delivered_at") @db.Timestamptz(3)
+  lastReadMessageId      String?          @map("last_read_message_id") @db.Uuid
+  lastReadAt             DateTime?        @map("last_read_at") @db.Timestamptz(3)
 
-  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lastReadMessage Message?     @relation("MemberLastReadMessage", fields: [conversationId, lastReadMessageId], references: [conversationId, id], onDelete: NoAction)
+  conversation         Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastDeliveredMessage Message?     @relation("MemberLastDeliveredMessage", fields: [conversationId, lastDeliveredMessageId], references: [conversationId, id], onDelete: NoAction)
+  lastReadMessage      Message?     @relation("MemberLastReadMessage", fields: [conversationId, lastReadMessageId], references: [conversationId, id], onDelete: NoAction)
 
   @@id([conversationId, userId], map: "conversation_members_pkey")
   @@index([userId, conversationId], map: "conversation_members_user_id_conversation_id_idx")
+  @@index([conversationId, lastDeliveredMessageId], map: "conversation_members_last_delivered_message_idx")
   @@index([conversationId, lastReadMessageId], map: "conversation_members_last_read_message_idx")
   @@map("conversation_members")
 }
@@ -109,11 +113,12 @@ model Message {
   editedAt        DateTime?   @map("edited_at") @db.Timestamptz(3)
   deletedAt       DateTime?   @map("deleted_at") @db.Timestamptz(3)
 
-  conversation Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
-  replyTo      Message?             @relation("MessageReplies", fields: [conversationId, replyToId], references: [conversationId, id], onDelete: NoAction)
-  replies      Message[]            @relation("MessageReplies")
-  lastReadBy   ConversationMember[] @relation("MemberLastReadMessage")
+  conversation    Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict)
+  replyTo         Message?             @relation("MessageReplies", fields: [conversationId, replyToId], references: [conversationId, id], onDelete: NoAction)
+  replies         Message[]            @relation("MessageReplies")
+  lastDeliveredTo ConversationMember[] @relation("MemberLastDeliveredMessage")
+  lastReadBy      ConversationMember[] @relation("MemberLastReadMessage")
 
   @@unique([conversationId, id], map: "messages_conversation_id_id_key")
   @@unique([senderId, conversationId, clientMessageId], map: "messages_sender_conversation_client_id_key")

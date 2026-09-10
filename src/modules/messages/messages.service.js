@@ -7,6 +7,7 @@ import { conversationsRepository } from '../conversations/conversations.reposito
 import { messagesRepository } from './messages.repository.js';
 import {
   markConversationReadCommandSchema,
+  markMessageDeliveredCommandSchema,
   sendMessageCommandSchema,
 } from './messages.validation.js';
 
@@ -19,6 +20,8 @@ const messageHistoryCursorSchema = z
   .strict();
 const noOpMessageEvents = Object.freeze({
   async messageCreated() {},
+  async messageDelivered() {},
+  async conversationRead() {},
 });
 
 export function createMessagesService({
@@ -85,12 +88,34 @@ export function createMessagesService({
       const command = parseCommand(markConversationReadCommandSchema, input, 'Read state');
       const context = await accessRepository.findAccessContext(command.conversationId, [userId]);
       requireConversationMember(context, userId);
-
-      return repository.advanceReadPosition({
+      const result = await repository.advanceReadPosition({
         conversationId: command.conversationId,
         userId,
         messageId: command.messageId,
       });
+
+      if (result.advanced) {
+        await messageEvents.conversationRead({ receipt: result.receipt });
+      }
+
+      return result.receipt;
+    },
+
+    async markDelivered(userId, input) {
+      const command = parseCommand(markMessageDeliveredCommandSchema, input, 'Delivery receipt');
+      const context = await accessRepository.findAccessContext(command.conversationId, [userId]);
+      requireConversationMember(context, userId);
+      const result = await repository.advanceDeliveredPosition({
+        conversationId: command.conversationId,
+        userId,
+        messageId: command.messageId,
+      });
+
+      if (result.advanced) {
+        await messageEvents.messageDelivered({ receipt: result.receipt });
+      }
+
+      return result.receipt;
     },
   };
 }

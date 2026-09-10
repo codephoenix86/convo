@@ -13,6 +13,8 @@ const conversationInclude = Object.freeze({
     select: {
       role: true,
       joinedAt: true,
+      lastDeliveredMessageId: true,
+      lastDeliveredAt: true,
       lastReadMessageId: true,
       lastReadAt: true,
       user: { select: userSummarySelect },

@@ -32,6 +32,8 @@ export const markConversationReadCommandSchema = markConversationReadBodySchema.
   conversationId: z.uuid(),
 });
 
+export const markMessageDeliveredCommandSchema = markConversationReadCommandSchema;
+
 export const messageHistoryQuerySchema = z
   .object({
     cursor: z.string().min(1).max(512).optional(),

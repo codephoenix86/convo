@@ -28,6 +28,39 @@ describe('realtime message events', () => {
     expect(room.emit).toHaveBeenCalledWith('message:new', { message });
   });
 
+  it.each([
+    [
+      'messageDelivered',
+      'message:delivered',
+      {
+        conversationId,
+        userId: randomUUID(),
+        lastDeliveredMessageId: randomUUID(),
+        lastDeliveredAt: new Date('2026-09-10T10:00:00.000Z'),
+      },
+    ],
+    [
+      'conversationRead',
+      'conversation:read',
+      {
+        conversationId,
+        userId: randomUUID(),
+        lastReadMessageId: randomUUID(),
+        lastReadAt: new Date('2026-09-10T10:00:00.000Z'),
+      },
+    ],
+  ])('publishes %s receipts to the conversation room', async (method, event, receipt) => {
+    const room = { emit: vi.fn() };
+    const socketServer = { to: vi.fn().mockReturnValue(room) };
+    const messageEvents = createRealtimeMessageEvents();
+
+    messageEvents.attach(socketServer);
+    await messageEvents[method]({ receipt });
+
+    expect(socketServer.to).toHaveBeenCalledWith(getConversationRoom(conversationId));
+    expect(room.emit).toHaveBeenCalledWith(event, { receipt });
+  });
+
   it('fails fast before the publisher is attached to Socket.IO', async () => {
     const messageEvents = createRealtimeMessageEvents();
 

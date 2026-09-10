@@ -232,6 +232,7 @@ describe('database-backed message flow', () => {
     const bobConversation = findConversation(unreadAfterRegressionAttempt, conversationId);
     const bobMembership = bobConversation.members.find((member) => member.user.id === users.bob.id);
     expect(bobConversation.unreadCount).toBe(0);
+    expect(bobMembership.lastDeliveredMessageId).toBe(thirdSend.body.data.message.id);
     expect(bobMembership.lastReadMessageId).toBe(thirdSend.body.data.message.id);
 
     await sendMessage(app, 'alice-access', conversationId, {
@@ -295,7 +296,12 @@ async function createFixtureUsers() {
 
 async function resetDatabase() {
   await db.conversationMember.updateMany({
-    data: { lastReadMessageId: null, lastReadAt: null },
+    data: {
+      lastDeliveredMessageId: null,
+      lastDeliveredAt: null,
+      lastReadMessageId: null,
+      lastReadAt: null,
+    },
   });
   await db.message.deleteMany();
   await db.refreshSession.deleteMany();

@@ -15,6 +15,7 @@ function createFixture(context = memberContext()) {
   const repository = {
     create: vi.fn(),
     listHistory: vi.fn(),
+    advanceDeliveredPosition: vi.fn(),
     advanceReadPosition: vi.fn(),
   };
   const accessRepository = {
@@ -22,6 +23,8 @@ function createFixture(context = memberContext()) {
   };
   const messageEvents = {
     messageCreated: vi.fn(),
+    messageDelivered: vi.fn(),
+    conversationRead: vi.fn(),
   };
   const service = createMessagesService({ repository, accessRepository, messageEvents });
 
@@ -180,7 +183,10 @@ describe('messages service', () => {
       lastReadMessageId: readMessageId,
       lastReadAt: createdAt,
     };
-    fixture.repository.advanceReadPosition.mockResolvedValue(readState);
+    fixture.repository.advanceReadPosition.mockResolvedValue({
+      receipt: readState,
+      advanced: true,
+    });
 
     await expect(
       fixture.service.markRead(userId, { conversationId, messageId: readMessageId }),
@@ -190,6 +196,51 @@ describe('messages service', () => {
       userId,
       messageId: readMessageId,
     });
+    expect(fixture.messageEvents.conversationRead).toHaveBeenCalledWith({ receipt: readState });
+  });
+
+  it('persists and publishes an authorized delivery receipt', async () => {
+    const fixture = createFixture();
+    const deliveredMessageId = randomUUID();
+    const receipt = {
+      conversationId,
+      userId,
+      lastDeliveredMessageId: deliveredMessageId,
+      lastDeliveredAt: createdAt,
+    };
+    fixture.repository.advanceDeliveredPosition.mockResolvedValue({
+      receipt,
+      advanced: true,
+    });
+
+    await expect(
+      fixture.service.markDelivered(userId, {
+        conversationId,
+        messageId: deliveredMessageId,
+      }),
+    ).resolves.toBe(receipt);
+    expect(fixture.messageEvents.messageDelivered).toHaveBeenCalledWith({ receipt });
+  });
+
+  it('does not republish an idempotent receipt retry', async () => {
+    const fixture = createFixture();
+    const readState = {
+      conversationId,
+      userId,
+      lastReadMessageId: randomUUID(),
+      lastReadAt: createdAt,
+    };
+    fixture.repository.advanceReadPosition.mockResolvedValue({
+      receipt: readState,
+      advanced: false,
+    });
+
+    await fixture.service.markRead(userId, {
+      conversationId,
+      messageId: readState.lastReadMessageId,
+    });
+
+    expect(fixture.messageEvents.conversationRead).not.toHaveBeenCalled();
   });
 
   it('validates and authorizes read updates before changing persisted state', async () => {
@@ -204,5 +255,10 @@ describe('messages service', () => {
       fixture.service.markRead(userId, { conversationId, messageId: randomUUID() }),
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(fixture.repository.advanceReadPosition).not.toHaveBeenCalled();
+
+    await expect(
+      fixture.service.markDelivered(userId, { conversationId, messageId: randomUUID() }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(fixture.repository.advanceDeliveredPosition).not.toHaveBeenCalled();
   });
 });

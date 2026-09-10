@@ -88,6 +88,8 @@ Socket clients authenticate during the connection handshake by providing the acc
 
 An authenticated client sends `message:send` with `{ conversationId, clientMessageId, body, replyToId? }` and an acknowledgement callback. Success acknowledgements use `{ ok: true, data: { message, created } }`; rejected events use `{ ok: false, error: { code, message, details? } }`. A newly persisted message is broadcast as `message:new` with `{ message }`. Authorization is checked again for every send even though the socket initially joined authorized rooms.
 
+Clients acknowledge receipt with `message:delivered` and advance their read position with `conversation:read`; both accept `{ conversationId, messageId }` and require an acknowledgement callback. Successful responses and room broadcasts contain the canonical member receipt in `{ receipt }`. Delivery and read positions advance monotonically using server message order, duplicate or older updates are not rebroadcast, and a read update also advances delivery because a read message has necessarily been delivered.
+
 ### Reconnect and resynchronization
 
 After every initial connection or reconnect, the server authenticates the current `auth.token`, reloads conversation memberships from PostgreSQL, joins only those rooms, and then emits `session:ready` with `{ connectionId, serverTime, syncRequired: true }`. Clients should update `socket.auth.token` before reconnecting when they refresh an access token and should not send application events until `session:ready` arrives. A rejected reconnect must obtain a valid token before explicitly connecting again.
@@ -145,6 +147,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
 - Read positions use canonical message timestamps and IDs, never move backward, and are returned with conversation members for resynchronization.
+- Delivery receipts are durable per-member positions; read and delivery updates are authorized per event and broadcast only after persisted advancement.
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
