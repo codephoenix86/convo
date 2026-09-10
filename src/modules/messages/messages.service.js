@@ -1,11 +1,14 @@
 import { z } from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../lib/cursor.js';
-import { ValidationError } from '../../lib/errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../lib/errors.js';
 import { requireConversationMember } from '../conversations/conversation-access.js';
 import { conversationsRepository } from '../conversations/conversations.repository.js';
+import { presentMessage } from './message-presenter.js';
 import { messagesRepository } from './messages.repository.js';
 import {
+  deleteMessageCommandSchema,
+  editMessageCommandSchema,
   markConversationReadCommandSchema,
   markMessageDeliveredCommandSchema,
   sendMessageCommandSchema,
@@ -22,6 +25,8 @@ const noOpMessageEvents = Object.freeze({
   async messageCreated() {},
   async messageDelivered() {},
   async conversationRead() {},
+  async messageEdited() {},
+  async messageDeleted() {},
 });
 
 export function createMessagesService({
@@ -68,7 +73,7 @@ export function createMessagesService({
         : undefined;
       const rows = await repository.listHistory({ conversationId, userId, cursor, limit });
       const hasNextPage = rows.length > limit;
-      const messages = hasNextPage ? rows.slice(0, limit) : rows;
+      const messages = (hasNextPage ? rows.slice(0, limit) : rows).map(presentMessage);
       const lastMessage = messages.at(-1);
 
       return {
@@ -117,7 +122,80 @@ export function createMessagesService({
 
       return result.receipt;
     },
+
+    async edit(userId, input) {
+      const command = parseCommand(editMessageCommandSchema, input, 'Message');
+      const context = await repository.findMutationContext({
+        messageId: command.messageId,
+        userId,
+      });
+      requireSenderMutation(context, userId);
+
+      if (context.deletedAt) {
+        throw new ConflictError('Deleted messages cannot be edited');
+      }
+
+      if (context.type !== 'TEXT') {
+        throw new ConflictError('This message type cannot be edited');
+      }
+
+      if (context.body === command.body) {
+        return presentMessage(context);
+      }
+
+      const message = presentMessage(
+        await repository.edit({
+          conversationId: context.conversationId,
+          messageId: command.messageId,
+          userId,
+          body: command.body,
+        }),
+      );
+
+      await messageEvents.messageEdited({ message });
+
+      return message;
+    },
+
+    async delete(userId, input) {
+      const command = parseCommand(deleteMessageCommandSchema, input, 'Message');
+      const context = await repository.findMutationContext({
+        messageId: command.messageId,
+        userId,
+      });
+      requireSenderMutation(context, userId);
+
+      if (context.deletedAt) {
+        return presentMessage(context);
+      }
+
+      if (context.type !== 'TEXT') {
+        throw new ConflictError('This message type cannot be deleted');
+      }
+
+      const message = presentMessage(
+        await repository.softDelete({
+          conversationId: context.conversationId,
+          messageId: command.messageId,
+          userId,
+        }),
+      );
+
+      await messageEvents.messageDeleted({ message });
+
+      return message;
+    },
   };
+}
+
+function requireSenderMutation(message, userId) {
+  if (!message) {
+    throw new NotFoundError('Message not found');
+  }
+
+  if (message.senderId !== userId) {
+    throw new ForbiddenError('Only the message sender can modify it');
+  }
 }
 
 function parseSendMessageCommand(input) {

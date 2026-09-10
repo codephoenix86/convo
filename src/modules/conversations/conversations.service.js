@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { decodeCursor, encodeCursor } from '../../lib/cursor.js';
 import { ValidationError } from '../../lib/errors.js';
+import { presentMessage } from '../messages/message-presenter.js';
 import {
   allowedRolesForAdding,
   GROUP_MANAGER_ROLES,
@@ -172,7 +173,7 @@ function formatConversation(conversation, unreadCount) {
       lastReadAt: member.lastReadAt,
       user: member.user,
     })),
-    lastMessage: conversation.messages[0] ?? null,
+    lastMessage: presentMessage(conversation.messages[0] ?? null),
   };
 
   if (unreadCount !== undefined) {

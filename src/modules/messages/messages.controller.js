@@ -28,5 +28,22 @@ export function createMessagesController(messages) {
 
       return response.status(200).json({ data: { readState } });
     },
+
+    async edit(request, response) {
+      const message = await messages.edit(request.user.id, {
+        messageId: request.validated.params.id,
+        body: request.body.body,
+      });
+
+      return response.status(200).json({ data: { message } });
+    },
+
+    async delete(request, response) {
+      const message = await messages.delete(request.user.id, {
+        messageId: request.validated.params.id,
+      });
+
+      return response.status(200).json({ data: { message } });
+    },
   };
 }

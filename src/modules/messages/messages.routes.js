@@ -6,7 +6,9 @@ import { createMessagesController } from './messages.controller.js';
 import {
   conversationMessagesParamsSchema,
   createMessageBodySchema,
+  editMessageBodySchema,
   markConversationReadBodySchema,
+  messageIdParamsSchema,
   messageHistoryQuerySchema,
 } from './messages.validation.js';
 
@@ -36,6 +38,23 @@ export function createMessagesRouter({ messages, accessTokenVerifier }) {
     validateBody(markConversationReadBodySchema),
     controller.markRead,
   );
+
+  return router;
+}
+
+export function createMessageMutationsRouter({ messages, accessTokenVerifier }) {
+  const router = Router();
+  const controller = createMessagesController(messages);
+  const authenticate = createAccessTokenAuthenticator(accessTokenVerifier);
+
+  router.patch(
+    '/:id',
+    authenticate,
+    validateParams(messageIdParamsSchema),
+    validateBody(editMessageBodySchema),
+    controller.edit,
+  );
+  router.delete('/:id', authenticate, validateParams(messageIdParamsSchema), controller.delete);
 
   return router;
 }

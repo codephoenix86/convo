@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const messageBodySchema = z
+  .string()
+  .trim()
+  .min(1, 'Message body must not be empty')
+  .max(4000, 'Message body must contain at most 4000 characters');
+
 export const conversationMessagesParamsSchema = z
   .object({
     id: z.uuid(),
@@ -9,11 +15,7 @@ export const conversationMessagesParamsSchema = z
 export const createMessageBodySchema = z
   .object({
     clientMessageId: z.uuid(),
-    body: z
-      .string()
-      .trim()
-      .min(1, 'Message body must not be empty')
-      .max(4000, 'Message body must contain at most 4000 characters'),
+    body: messageBodySchema,
     replyToId: z.uuid().nullable().optional(),
   })
   .strict();
@@ -33,6 +35,19 @@ export const markConversationReadCommandSchema = markConversationReadBodySchema.
 });
 
 export const markMessageDeliveredCommandSchema = markConversationReadCommandSchema;
+
+export const messageIdParamsSchema = z.object({ id: z.uuid() }).strict();
+
+export const editMessageBodySchema = z.object({ body: messageBodySchema }).strict();
+
+export const editMessageCommandSchema = z
+  .object({
+    messageId: z.uuid(),
+    body: messageBodySchema,
+  })
+  .strict();
+
+export const deleteMessageCommandSchema = z.object({ messageId: z.uuid() }).strict();
 
 export const messageHistoryQuerySchema = z
   .object({

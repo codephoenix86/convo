@@ -79,6 +79,8 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | POST   | `/conversations/:id/messages`        | Persist an idempotent text message via REST.            |
 | GET    | `/conversations/:id/messages`        | Load stable cursor-paginated message history.           |
 | PUT    | `/conversations/:id/read`            | Advance the caller's read position monotonically.       |
+| PATCH  | `/messages/:id`                      | Edit a sender-owned text message.                       |
+| DELETE | `/messages/:id`                      | Soft-delete a sender-owned text message.                |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -87,6 +89,8 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 Socket clients authenticate during the connection handshake by providing the access token as `auth.token`. Invalid or missing tokens are rejected before the socket can run application handlers. Each authenticated connection joins a private `user:<userId>` room and server-derived `conversation:<conversationId>` rooms loaded from PostgreSQL. Clients cannot select their own rooms; successful conversation and membership writes synchronize room access for every connected device.
 
 An authenticated client sends `message:send` with `{ conversationId, clientMessageId, body, replyToId? }` and an acknowledgement callback. Success acknowledgements use `{ ok: true, data: { message, created } }`; rejected events use `{ ok: false, error: { code, message, details? } }`. A newly persisted message is broadcast as `message:new` with `{ message }`. Authorization is checked again for every send even though the socket initially joined authorized rooms.
+
+Senders edit and soft-delete their text messages with `message:edit` using `{ messageId, body }` and `message:delete` using `{ messageId }`, or through the matching REST routes. Successful socket acknowledgements contain `{ message }`, while the conversation receives `message:edited` or `message:deleted`. Membership and sender ownership are rechecked for every mutation. Deleted messages remain as tombstones with `body: null`; repeated deletes and edits that do not change the normalized body return the canonical message without another broadcast.
 
 Clients acknowledge receipt with `message:delivered` and advance their read position with `conversation:read`; both accept `{ conversationId, messageId }` and require an acknowledgement callback. Successful responses and room broadcasts contain the canonical member receipt in `{ receipt }`. Delivery and read positions advance monotonically using server message order, duplicate or older updates are not rebroadcast, and a read update also advances delivery because a read message has necessarily been delivered.
 
@@ -157,6 +161,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
+- REST and Socket.IO message mutations share sender-ownership rules, atomically update PostgreSQL, and redact soft-deleted bodies from responses and broadcasts.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.

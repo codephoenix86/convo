@@ -140,6 +140,44 @@ describe('conversations service', () => {
     });
   });
 
+  it('redacts a soft-deleted last message in the inbox', async () => {
+    const deletedAt = new Date('2026-09-01T12:06:00.000Z');
+    const repository = {
+      listForUser: vi.fn().mockResolvedValue({
+        conversations: [
+          createConversation({
+            messages: [
+              {
+                id: randomUUID(),
+                conversationId,
+                senderId: firstUserId,
+                clientMessageId: randomUUID(),
+                body: 'Persisted but not exposed',
+                type: 'TEXT',
+                replyToId: null,
+                createdAt,
+                updatedAt: deletedAt,
+                editedAt: null,
+                deletedAt,
+                sender: { id: firstUserId, username: 'first', avatarUrl: null },
+              },
+            ],
+          }),
+        ],
+        hasNextPage: false,
+        unreadCounts: new Map([[conversationId, 0]]),
+      }),
+    };
+    const service = createConversationsService(repository);
+
+    const page = await service.list(firstUserId, { limit: 20 });
+
+    expect(page.items[0].lastMessage).toMatchObject({
+      body: null,
+      deletedAt,
+    });
+  });
+
   it('creates a group with the authenticated user as its implicit owner', async () => {
     const group = createConversation({ type: 'GROUP', name: 'Backend Team' });
     const repository = { createGroup: vi.fn().mockResolvedValue(group) };

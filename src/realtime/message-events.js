@@ -33,6 +33,22 @@ export function createRealtimeMessageEvents() {
         .to(getConversationRoom(receipt.conversationId))
         .emit('conversation:read', { receipt });
     },
+
+    async messageEdited({ message }) {
+      const socketServer = requireSocketServer(io);
+
+      socketServer.to(getConversationRoom(message.conversationId)).emit('message:edited', {
+        message,
+      });
+    },
+
+    async messageDeleted({ message }) {
+      const socketServer = requireSocketServer(io);
+
+      socketServer.to(getConversationRoom(message.conversationId)).emit('message:deleted', {
+        message,
+      });
+    },
   };
 }
 

@@ -29,6 +29,8 @@ function createMessages() {
     send: vi.fn(),
     listHistory: vi.fn(),
     markRead: vi.fn(),
+    edit: vi.fn(),
+    delete: vi.fn(),
   };
 }
 
@@ -181,5 +183,64 @@ describe('PUT /conversations/:id/read', () => {
       .expect(401);
 
     expect(messages.markRead).not.toHaveBeenCalled();
+  });
+});
+
+describe('message mutation endpoints', () => {
+  it('edits a message with a normalized body', async () => {
+    const messages = createMessages();
+    const editedMessage = { ...message, body: 'Edited body', editedAt: new Date() };
+    messages.edit.mockResolvedValue(editedMessage);
+
+    const response = await request(createAuthenticatedApp(messages))
+      .patch(`/messages/${message.id}`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ body: '  Edited body  ' })
+      .expect(200);
+
+    expect(messages.edit).toHaveBeenCalledWith(userId, {
+      messageId: message.id,
+      body: 'Edited body',
+    });
+    expect(response.body.data.message).toMatchObject({ id: message.id, body: 'Edited body' });
+  });
+
+  it('returns the canonical tombstone after deletion', async () => {
+    const messages = createMessages();
+    const deletedMessage = { ...message, body: null, deletedAt: new Date() };
+    messages.delete.mockResolvedValue(deletedMessage);
+
+    const response = await request(createAuthenticatedApp(messages))
+      .delete(`/messages/${message.id}`)
+      .set('authorization', 'Bearer valid-access-token')
+      .expect(200);
+
+    expect(messages.delete).toHaveBeenCalledWith(userId, { messageId: message.id });
+    expect(response.body.data.message).toMatchObject({
+      id: message.id,
+      body: null,
+      deletedAt: expect.any(String),
+    });
+  });
+
+  it('rejects invalid, unrelated, and unauthenticated mutation inputs', async () => {
+    const messages = createMessages();
+    const app = createAuthenticatedApp(messages);
+    const authorization = { authorization: 'Bearer valid-access-token' };
+
+    await request(app)
+      .patch('/messages/not-a-uuid')
+      .set(authorization)
+      .send({ body: 'Edited' })
+      .expect(400);
+    await request(app)
+      .patch(`/messages/${message.id}`)
+      .set(authorization)
+      .send({ body: ' ', senderId: userId })
+      .expect(400);
+    await request(createApp({ messages })).delete(`/messages/${message.id}`).expect(401);
+
+    expect(messages.edit).not.toHaveBeenCalled();
+    expect(messages.delete).not.toHaveBeenCalled();
   });
 });

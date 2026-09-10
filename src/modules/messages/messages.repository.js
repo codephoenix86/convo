@@ -114,6 +114,94 @@ export function createMessagesRepository(database = db) {
       });
     },
 
+    findMutationContext({ messageId, userId }) {
+      return database.message.findFirst({
+        where: {
+          id: messageId,
+          conversation: { members: { some: { userId } } },
+        },
+        select: messageSelect,
+      });
+    },
+
+    async edit({ conversationId, messageId, userId, body }) {
+      try {
+        const result = await database.conversation.update({
+          where: {
+            id: conversationId,
+            members: { some: { userId } },
+          },
+          data: {
+            updatedAt: new Date(),
+            messages: {
+              update: {
+                where: {
+                  id: messageId,
+                  senderId: userId,
+                  type: 'TEXT',
+                  deletedAt: null,
+                },
+                data: { body, editedAt: new Date() },
+              },
+            },
+          },
+          select: {
+            messages: {
+              where: { id: messageId },
+              select: messageSelect,
+            },
+          },
+        });
+
+        return result.messages[0];
+      } catch (error) {
+        if (isRecordNotFoundError(error)) {
+          throw new NotFoundError('Message not found');
+        }
+
+        throw error;
+      }
+    },
+
+    async softDelete({ conversationId, messageId, userId }) {
+      try {
+        const result = await database.conversation.update({
+          where: {
+            id: conversationId,
+            members: { some: { userId } },
+          },
+          data: {
+            updatedAt: new Date(),
+            messages: {
+              update: {
+                where: {
+                  id: messageId,
+                  senderId: userId,
+                  type: 'TEXT',
+                  deletedAt: null,
+                },
+                data: { deletedAt: new Date() },
+              },
+            },
+          },
+          select: {
+            messages: {
+              where: { id: messageId },
+              select: messageSelect,
+            },
+          },
+        });
+
+        return result.messages[0];
+      } catch (error) {
+        if (isRecordNotFoundError(error)) {
+          throw new NotFoundError('Message not found');
+        }
+
+        throw error;
+      }
+    },
+
     advanceDeliveredPosition({ conversationId, userId, messageId }) {
       return advanceReceiptPositions(database, {
         conversationId,

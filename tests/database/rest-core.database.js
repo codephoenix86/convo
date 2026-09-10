@@ -235,14 +235,67 @@ describe('database-backed message flow', () => {
     expect(bobMembership.lastDeliveredMessageId).toBe(thirdSend.body.data.message.id);
     expect(bobMembership.lastReadMessageId).toBe(thirdSend.body.data.message.id);
 
-    await sendMessage(app, 'alice-access', conversationId, {
+    const fourthSend = await sendMessage(app, 'alice-access', conversationId, {
       clientMessageId: randomUUID(),
       body: 'Unread after the saved position',
     }).expect(201);
+    const fourthMessageId = fourthSend.body.data.message.id;
     const unreadAfterNewMessage = await authenticatedRequest(app, 'bob-access')
       .get('/conversations')
       .expect(200);
     expect(findConversation(unreadAfterNewMessage, conversationId).unreadCount).toBe(1);
+
+    await authenticatedRequest(app, 'bob-access')
+      .patch(`/messages/${fourthMessageId}`)
+      .send({ body: 'A recipient cannot edit this message' })
+      .expect(403);
+    await authenticatedRequest(app, 'charlie-access')
+      .patch(`/messages/${fourthMessageId}`)
+      .send({ body: 'A nonmember cannot discover this message' })
+      .expect(404);
+
+    const edited = await authenticatedRequest(app, 'alice-access')
+      .patch(`/messages/${fourthMessageId}`)
+      .send({ body: '  Edited unread message  ' })
+      .expect(200);
+    expect(edited.body.data.message).toMatchObject({
+      id: fourthMessageId,
+      body: 'Edited unread message',
+      editedAt: expect.any(String),
+      deletedAt: null,
+    });
+
+    const deleted = await authenticatedRequest(app, 'alice-access')
+      .delete(`/messages/${fourthMessageId}`)
+      .expect(200);
+    expect(deleted.body.data.message).toMatchObject({
+      id: fourthMessageId,
+      body: null,
+      deletedAt: expect.any(String),
+    });
+
+    const deleteRetry = await authenticatedRequest(app, 'alice-access')
+      .delete(`/messages/${fourthMessageId}`)
+      .expect(200);
+    expect(deleteRetry.body.data.message).toEqual(deleted.body.data.message);
+    expect(await db.message.count({ where: { conversationId } })).toBe(4);
+    expect(await db.message.findUnique({ where: { id: fourthMessageId } })).toMatchObject({
+      body: 'Edited unread message',
+      deletedAt: expect.any(Date),
+    });
+
+    const historyAfterDelete = await authenticatedRequest(app, 'bob-access')
+      .get(`/conversations/${conversationId}/messages`)
+      .query({ limit: 20 })
+      .expect(200);
+    expect(
+      historyAfterDelete.body.data.items.find((message) => message.id === fourthMessageId),
+    ).toMatchObject({ body: null, deletedAt: expect.any(String) });
+
+    const unreadAfterDelete = await authenticatedRequest(app, 'bob-access')
+      .get('/conversations')
+      .expect(200);
+    expect(findConversation(unreadAfterDelete, conversationId).unreadCount).toBe(0);
 
     await authenticatedRequest(app, 'charlie-access')
       .put(`/conversations/${conversationId}/read`)

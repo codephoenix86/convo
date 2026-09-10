@@ -108,6 +108,84 @@ describe('messages repository', () => {
     );
   });
 
+  it('loads mutation context only for a current conversation member', async () => {
+    const database = { message: { findFirst: vi.fn().mockResolvedValue(storedMessage) } };
+    const repository = createMessagesRepository(database);
+
+    await expect(repository.findMutationContext({ messageId, userId })).resolves.toBe(
+      storedMessage,
+    );
+    expect(database.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: messageId,
+          conversation: { members: { some: { userId } } },
+        },
+      }),
+    );
+  });
+
+  it('edits a current member-owned text message and bumps inbox synchronization', async () => {
+    const editedMessage = { ...storedMessage, body: 'Edited body', editedAt: new Date() };
+    const database = {
+      conversation: { update: vi.fn().mockResolvedValue({ messages: [editedMessage] }) },
+    };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.edit({ conversationId, messageId, userId, body: 'Edited body' }),
+    ).resolves.toBe(editedMessage);
+    expect(database.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: conversationId, members: { some: { userId } } },
+        data: {
+          updatedAt: expect.any(Date),
+          messages: {
+            update: {
+              where: { id: messageId, senderId: userId, type: 'TEXT', deletedAt: null },
+              data: { body: 'Edited body', editedAt: expect.any(Date) },
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  it('soft deletes a current member-owned message and maps race failures safely', async () => {
+    const deletedMessage = { ...storedMessage, deletedAt: new Date() };
+    const database = {
+      conversation: {
+        update: vi
+          .fn()
+          .mockResolvedValueOnce({ messages: [deletedMessage] })
+          .mockRejectedValueOnce({ code: 'P2025' }),
+      },
+    };
+    const repository = createMessagesRepository(database);
+
+    await expect(repository.softDelete({ conversationId, messageId, userId })).resolves.toBe(
+      deletedMessage,
+    );
+    expect(database.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: conversationId, members: { some: { userId } } },
+        data: {
+          updatedAt: expect.any(Date),
+          messages: {
+            update: {
+              where: { id: messageId, senderId: userId, type: 'TEXT', deletedAt: null },
+              data: { deletedAt: expect.any(Date) },
+            },
+          },
+        },
+      }),
+    );
+
+    await expect(repository.softDelete({ conversationId, messageId, userId })).rejects.toEqual(
+      expect.objectContaining({ name: NotFoundError.name, message: 'Message not found' }),
+    );
+  });
+
   it('atomically advances a read position using canonical message order', async () => {
     const readState = {
       conversationId,

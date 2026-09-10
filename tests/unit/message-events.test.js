@@ -61,6 +61,22 @@ describe('realtime message events', () => {
     expect(room.emit).toHaveBeenCalledWith(event, { receipt });
   });
 
+  it.each([
+    ['messageEdited', 'message:edited'],
+    ['messageDeleted', 'message:deleted'],
+  ])('publishes %s changes to the conversation room', async (method, event) => {
+    const room = { emit: vi.fn() };
+    const socketServer = { to: vi.fn().mockReturnValue(room) };
+    const messageEvents = createRealtimeMessageEvents();
+    const message = { id: randomUUID(), conversationId };
+
+    messageEvents.attach(socketServer);
+    await messageEvents[method]({ message });
+
+    expect(socketServer.to).toHaveBeenCalledWith(getConversationRoom(conversationId));
+    expect(room.emit).toHaveBeenCalledWith(event, { message });
+  });
+
   it('fails fast before the publisher is attached to Socket.IO', async () => {
     const messageEvents = createRealtimeMessageEvents();
 
