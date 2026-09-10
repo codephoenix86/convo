@@ -47,3 +47,9 @@ export class PayloadTooLargeError extends AppError {
     super({ code: 'PAYLOAD_TOO_LARGE', message, statusCode: 413 });
   }
 }
+
+export class RateLimitError extends AppError {
+  constructor(message = 'Too many requests') {
+    super({ code: 'RATE_LIMITED', message, statusCode: 429 });
+  }
+}

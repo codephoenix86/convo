@@ -5,6 +5,7 @@ import {
   ForbiddenError,
   NotFoundError,
   PayloadTooLargeError,
+  RateLimitError,
   UnauthorizedError,
   ValidationError,
 } from '../../src/lib/errors.js';
@@ -17,6 +18,7 @@ describe('application errors', () => {
     [new NotFoundError(), 404, 'NOT_FOUND'],
     [new ConflictError(), 409, 'CONFLICT'],
     [new PayloadTooLargeError(), 413, 'PAYLOAD_TOO_LARGE'],
+    [new RateLimitError(), 429, 'RATE_LIMITED'],
   ])('maps %s to its public HTTP contract', (error, statusCode, code) => {
     expect(error).toMatchObject({ statusCode, code });
   });

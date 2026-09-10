@@ -8,6 +8,8 @@ import { messagesService } from '../modules/messages/messages.service.js';
 import { createSocketAuthenticator } from './authenticate.js';
 import { createConversationRoomCoordinator } from './conversation-rooms.js';
 import { registerMessageHandlers } from './handlers/messages.js';
+import { registerTypingHandlers } from './handlers/typing.js';
+import { createTypingCoordinator } from './typing.js';
 
 export function createSocketServer(
   httpServer,
@@ -16,6 +18,8 @@ export function createSocketServer(
     accessTokenVerifier = verifyAccessToken,
     membershipRepository = conversationsRepository,
     roomCoordinator = createConversationRoomCoordinator(),
+    typingCoordinator = createTypingCoordinator(),
+    typingRateLimit,
     messages = messagesService,
     log = logger,
   } = {},
@@ -37,12 +41,20 @@ export function createSocketServer(
   });
 
   roomCoordinator.attach(io);
+  typingCoordinator.attach(io);
   io.use(createSocketAuthenticator(accessTokenVerifier, log));
   io.use(createConversationRoomInitializer(roomCoordinator, membershipRepository, log));
   io.on('connection', (socket) => {
     const ready = roomCoordinator.connectSocket(socket);
 
     registerMessageHandlers(socket, { messages, ready, log });
+    registerTypingHandlers(socket, {
+      ready,
+      accessRepository: membershipRepository,
+      typing: typingCoordinator,
+      rateLimit: typingRateLimit,
+      log,
+    });
     void initializeConnectedSocket(socket, ready, connectionTracker, log);
   });
 
