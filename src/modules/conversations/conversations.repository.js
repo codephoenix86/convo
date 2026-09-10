@@ -13,6 +13,7 @@ const conversationInclude = Object.freeze({
     select: {
       role: true,
       joinedAt: true,
+      lastReadMessageId: true,
       lastReadAt: true,
       user: { select: userSummarySelect },
     },
@@ -283,7 +284,7 @@ export function createConversationsRepository(database = db) {
 
             return {
               conversationId: conversation.id,
-              createdAt: { gt: membership.lastReadAt ?? membership.joinedAt },
+              ...createUnreadPositionFilter(membership),
             };
           }),
         },
@@ -295,6 +296,22 @@ export function createConversationsRepository(database = db) {
 
       return { conversations, hasNextPage, unreadCounts };
     },
+  };
+}
+
+function createUnreadPositionFilter(membership) {
+  if (!membership.lastReadAt || membership.lastReadAt.getTime() <= membership.joinedAt.getTime()) {
+    return { createdAt: { gt: membership.joinedAt } };
+  }
+
+  return {
+    OR: [
+      { createdAt: { gt: membership.lastReadAt } },
+      {
+        createdAt: membership.lastReadAt,
+        id: { gt: membership.lastReadMessageId },
+      },
+    ],
   };
 }
 

@@ -24,12 +24,14 @@ function createConversation(overrides = {}) {
       {
         role: 'MEMBER',
         joinedAt: createdAt,
+        lastReadMessageId: null,
         lastReadAt: null,
         user: { id: firstUserId, username: 'first', avatarUrl: null },
       },
       {
         role: 'MEMBER',
         joinedAt: createdAt,
+        lastReadMessageId: null,
         lastReadAt: null,
         user: { id: secondUserId, username: 'second', avatarUrl: null },
       },
@@ -103,6 +105,10 @@ describe('conversations service', () => {
       id: conversationId,
       lastMessage: null,
       unreadCount: 3,
+      members: [
+        expect.objectContaining({ lastReadMessageId: null, lastReadAt: null }),
+        expect.objectContaining({ lastReadMessageId: null, lastReadAt: null }),
+      ],
     });
     expect(firstPage.nextCursor).toEqual(expect.any(String));
 

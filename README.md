@@ -78,6 +78,7 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | PATCH  | `/conversations/:id/members/:userId` | Promote or demote a member as owner.                    |
 | POST   | `/conversations/:id/messages`        | Persist an idempotent text message via REST.            |
 | GET    | `/conversations/:id/messages`        | Load stable cursor-paginated message history.           |
+| PUT    | `/conversations/:id/read`            | Advance the caller's read position monotonically.       |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -143,6 +144,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Refresh tokens rotate atomically; current/all-session logout revokes server-side refresh state.
 - Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
+- Read positions use canonical message timestamps and IDs, never move backward, and are returned with conversation members for resynchronization.
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.

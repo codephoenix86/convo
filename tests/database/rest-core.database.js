@@ -177,7 +177,7 @@ describe('database-backed message flow', () => {
       body: 'Second message',
       replyToId: firstSend.body.data.message.id,
     }).expect(201);
-    await sendMessage(app, 'alice-access', conversationId, {
+    const thirdSend = await sendMessage(app, 'alice-access', conversationId, {
       clientMessageId: randomUUID(),
       body: 'Third message',
     }).expect(201);
@@ -205,6 +205,48 @@ describe('database-backed message flow', () => {
     expect(history).toHaveLength(3);
     expect(new Set(history.map((message) => message.id)).size).toBe(3);
     expect(await db.message.count({ where: { conversationId } })).toBe(3);
+
+    const unreadBefore = await authenticatedRequest(app, 'bob-access')
+      .get('/conversations')
+      .expect(200);
+    expect(findConversation(unreadBefore, conversationId).unreadCount).toBe(2);
+
+    const markedRead = await authenticatedRequest(app, 'bob-access')
+      .put(`/conversations/${conversationId}/read`)
+      .send({ messageId: thirdSend.body.data.message.id })
+      .expect(200);
+    expect(markedRead.body.data.readState).toMatchObject({
+      conversationId,
+      userId: users.bob.id,
+      lastReadMessageId: thirdSend.body.data.message.id,
+    });
+
+    await authenticatedRequest(app, 'bob-access')
+      .put(`/conversations/${conversationId}/read`)
+      .send({ messageId: firstSend.body.data.message.id })
+      .expect(200);
+
+    const unreadAfterRegressionAttempt = await authenticatedRequest(app, 'bob-access')
+      .get('/conversations')
+      .expect(200);
+    const bobConversation = findConversation(unreadAfterRegressionAttempt, conversationId);
+    const bobMembership = bobConversation.members.find((member) => member.user.id === users.bob.id);
+    expect(bobConversation.unreadCount).toBe(0);
+    expect(bobMembership.lastReadMessageId).toBe(thirdSend.body.data.message.id);
+
+    await sendMessage(app, 'alice-access', conversationId, {
+      clientMessageId: randomUUID(),
+      body: 'Unread after the saved position',
+    }).expect(201);
+    const unreadAfterNewMessage = await authenticatedRequest(app, 'bob-access')
+      .get('/conversations')
+      .expect(200);
+    expect(findConversation(unreadAfterNewMessage, conversationId).unreadCount).toBe(1);
+
+    await authenticatedRequest(app, 'charlie-access')
+      .put(`/conversations/${conversationId}/read`)
+      .send({ messageId: thirdSend.body.data.message.id })
+      .expect(404);
   });
 });
 
@@ -231,6 +273,7 @@ function authenticatedRequest(app, token) {
     get: (path) => agent.get(path).set('authorization', authorization),
     patch: (path) => agent.patch(path).set('authorization', authorization),
     post: (path) => agent.post(path).set('authorization', authorization),
+    put: (path) => agent.put(path).set('authorization', authorization),
   };
 }
 
@@ -238,6 +281,10 @@ function sendMessage(app, token, conversationId, body) {
   return authenticatedRequest(app, token)
     .post(`/conversations/${conversationId}/messages`)
     .send(body);
+}
+
+function findConversation(response, conversationId) {
+  return response.body.data.items.find((conversation) => conversation.id === conversationId);
 }
 
 async function createFixtureUsers() {

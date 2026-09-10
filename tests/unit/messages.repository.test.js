@@ -107,4 +107,58 @@ describe('messages repository', () => {
       }),
     );
   });
+
+  it('atomically advances a read position using canonical message order', async () => {
+    const readState = {
+      conversationId,
+      userId,
+      lastReadMessageId: messageId,
+      lastReadAt: createdAt,
+    };
+    const database = {
+      message: {
+        findFirst: vi.fn().mockResolvedValue({ id: messageId, createdAt }),
+      },
+      conversationMember: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue(readState),
+      },
+    };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.advanceReadPosition({ conversationId, userId, messageId }),
+    ).resolves.toBe(readState);
+    expect(database.message.findFirst).toHaveBeenCalledWith({
+      where: { id: messageId, conversationId },
+      select: { id: true, createdAt: true },
+    });
+    expect(database.conversationMember.updateMany).toHaveBeenCalledWith({
+      where: {
+        conversationId,
+        userId,
+        OR: [
+          { lastReadAt: null },
+          { lastReadAt: { lt: createdAt } },
+          { lastReadAt: createdAt, lastReadMessageId: { lt: messageId } },
+        ],
+      },
+      data: { lastReadMessageId: messageId, lastReadAt: createdAt },
+    });
+  });
+
+  it('rejects a read target outside the requested conversation', async () => {
+    const database = {
+      message: { findFirst: vi.fn().mockResolvedValue(null) },
+      conversationMember: { updateMany: vi.fn(), findUnique: vi.fn() },
+    };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.advanceReadPosition({ conversationId, userId, messageId }),
+    ).rejects.toEqual(
+      expect.objectContaining({ name: NotFoundError.name, message: 'Message not found' }),
+    );
+    expect(database.conversationMember.updateMany).not.toHaveBeenCalled();
+  });
 });

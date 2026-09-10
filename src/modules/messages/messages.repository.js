@@ -103,6 +103,52 @@ export function createMessagesRepository(database = db) {
         select: messageSelect,
       });
     },
+
+    async advanceReadPosition({ conversationId, userId, messageId }) {
+      const targetMessage = await database.message.findFirst({
+        where: { id: messageId, conversationId },
+        select: { id: true, createdAt: true },
+      });
+
+      if (!targetMessage) {
+        throw new NotFoundError('Message not found');
+      }
+
+      await database.conversationMember.updateMany({
+        where: {
+          conversationId,
+          userId,
+          OR: [
+            { lastReadAt: null },
+            { lastReadAt: { lt: targetMessage.createdAt } },
+            {
+              lastReadAt: targetMessage.createdAt,
+              lastReadMessageId: { lt: targetMessage.id },
+            },
+          ],
+        },
+        data: {
+          lastReadMessageId: targetMessage.id,
+          lastReadAt: targetMessage.createdAt,
+        },
+      });
+
+      const membership = await database.conversationMember.findUnique({
+        where: { conversationId_userId: { conversationId, userId } },
+        select: {
+          conversationId: true,
+          userId: true,
+          lastReadMessageId: true,
+          lastReadAt: true,
+        },
+      });
+
+      if (!membership) {
+        throw new NotFoundError('Conversation not found');
+      }
+
+      return membership;
+    },
   };
 }
 

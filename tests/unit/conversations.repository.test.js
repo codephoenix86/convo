@@ -123,6 +123,46 @@ describe('conversations repository', () => {
     expect(result.unreadCounts.get(conversationId)).toBe(4);
   });
 
+  it('counts messages after the full read-position timestamp and ID', async () => {
+    const lastReadMessageId = randomUUID();
+    const lastReadAt = new Date('2026-09-01T12:03:00.000Z');
+    const conversation = {
+      id: conversationId,
+      updatedAt,
+      members: [
+        {
+          joinedAt,
+          lastReadMessageId,
+          lastReadAt,
+          user: { id: userId },
+        },
+      ],
+    };
+    const database = {
+      conversation: { findMany: vi.fn().mockResolvedValue([conversation]) },
+      message: { groupBy: vi.fn().mockResolvedValue([]) },
+    };
+    const repository = createConversationsRepository(database);
+
+    await repository.listForUser({ userId, limit: 20 });
+
+    expect(database.message.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            {
+              conversationId,
+              OR: [
+                { createdAt: { gt: lastReadAt } },
+                { createdAt: lastReadAt, id: { gt: lastReadMessageId } },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
   it('creates the group and all validated memberships atomically', async () => {
     const createdGroup = { id: conversationId, type: 'GROUP' };
     const transaction = {

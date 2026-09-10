@@ -28,6 +28,7 @@ function createMessages() {
   return {
     send: vi.fn(),
     listHistory: vi.fn(),
+    markRead: vi.fn(),
   };
 }
 
@@ -134,5 +135,51 @@ describe('GET /conversations/:id/messages', () => {
       .expect(400);
 
     expect(messages.listHistory).not.toHaveBeenCalled();
+  });
+});
+
+describe('PUT /conversations/:id/read', () => {
+  it('returns the caller read state after advancing through a message', async () => {
+    const messages = createMessages();
+    const readState = {
+      conversationId,
+      userId,
+      lastReadMessageId: message.id,
+      lastReadAt: message.createdAt,
+    };
+    messages.markRead.mockResolvedValue(readState);
+
+    const response = await request(createAuthenticatedApp(messages))
+      .put(`/conversations/${conversationId}/read`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ messageId: message.id })
+      .expect(200);
+
+    expect(messages.markRead).toHaveBeenCalledWith(userId, {
+      conversationId,
+      messageId: message.id,
+    });
+    expect(response.body.data.readState).toMatchObject({
+      conversationId,
+      userId,
+      lastReadMessageId: message.id,
+    });
+  });
+
+  it('rejects malformed or unauthenticated read updates before service logic', async () => {
+    const messages = createMessages();
+    const authenticatedApp = createAuthenticatedApp(messages);
+
+    await request(authenticatedApp)
+      .put(`/conversations/${conversationId}/read`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({ messageId: 'not-a-uuid' })
+      .expect(400);
+    await request(createApp({ messages }))
+      .put(`/conversations/${conversationId}/read`)
+      .send({ messageId: message.id })
+      .expect(401);
+
+    expect(messages.markRead).not.toHaveBeenCalled();
   });
 });

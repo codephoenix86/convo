@@ -6,6 +6,7 @@ import { createMessagesController } from './messages.controller.js';
 import {
   conversationMessagesParamsSchema,
   createMessageBodySchema,
+  markConversationReadBodySchema,
   messageHistoryQuerySchema,
 } from './messages.validation.js';
 
@@ -27,6 +28,13 @@ export function createMessagesRouter({ messages, accessTokenVerifier }) {
     validateParams(conversationMessagesParamsSchema),
     validateQuery(messageHistoryQuerySchema),
     controller.listHistory,
+  );
+  router.put(
+    '/:id/read',
+    authenticate,
+    validateParams(conversationMessagesParamsSchema),
+    validateBody(markConversationReadBodySchema),
+    controller.markRead,
   );
 
   return router;

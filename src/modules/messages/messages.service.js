@@ -5,7 +5,10 @@ import { ValidationError } from '../../lib/errors.js';
 import { requireConversationMember } from '../conversations/conversation-access.js';
 import { conversationsRepository } from '../conversations/conversations.repository.js';
 import { messagesRepository } from './messages.repository.js';
-import { sendMessageCommandSchema } from './messages.validation.js';
+import {
+  markConversationReadCommandSchema,
+  sendMessageCommandSchema,
+} from './messages.validation.js';
 
 const messageHistoryCursorSchema = z
   .object({
@@ -77,18 +80,34 @@ export function createMessagesService({
             : null,
       };
     },
+
+    async markRead(userId, input) {
+      const command = parseCommand(markConversationReadCommandSchema, input, 'Read state');
+      const context = await accessRepository.findAccessContext(command.conversationId, [userId]);
+      requireConversationMember(context, userId);
+
+      return repository.advanceReadPosition({
+        conversationId: command.conversationId,
+        userId,
+        messageId: command.messageId,
+      });
+    },
   };
 }
 
 function parseSendMessageCommand(input) {
-  const result = sendMessageCommandSchema.safeParse(input);
+  return parseCommand(sendMessageCommandSchema, input, 'Message');
+}
+
+function parseCommand(schema, input, subject) {
+  const result = schema.safeParse(input);
 
   if (result.success) {
     return result.data;
   }
 
   throw new ValidationError(
-    'Message validation failed',
+    `${subject} validation failed`,
     result.error.issues.map((issue) => ({
       field: issue.path.join('.') || 'message',
       message: issue.message,

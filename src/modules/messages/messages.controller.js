@@ -19,5 +19,14 @@ export function createMessagesController(messages) {
 
       return response.status(200).json({ data: result });
     },
+
+    async markRead(request, response) {
+      const readState = await messages.markRead(request.user.id, {
+        conversationId: request.validated.params.id,
+        messageId: request.body.messageId,
+      });
+
+      return response.status(200).json({ data: { readState } });
+    },
   };
 }

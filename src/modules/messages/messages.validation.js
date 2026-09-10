@@ -22,6 +22,16 @@ export const sendMessageCommandSchema = createMessageBodySchema.extend({
   conversationId: z.uuid(),
 });
 
+export const markConversationReadBodySchema = z
+  .object({
+    messageId: z.uuid(),
+  })
+  .strict();
+
+export const markConversationReadCommandSchema = markConversationReadBodySchema.extend({
+  conversationId: z.uuid(),
+});
+
 export const messageHistoryQuerySchema = z
   .object({
     cursor: z.string().min(1).max(512).optional(),

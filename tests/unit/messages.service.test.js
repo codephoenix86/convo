@@ -15,6 +15,7 @@ function createFixture(context = memberContext()) {
   const repository = {
     create: vi.fn(),
     listHistory: vi.fn(),
+    advanceReadPosition: vi.fn(),
   };
   const accessRepository = {
     findAccessContext: vi.fn().mockResolvedValue(context),
@@ -168,5 +169,40 @@ describe('messages service', () => {
       fixture.service.listHistory(userId, conversationId, { cursor, limit: 30 }),
     ).rejects.toBeInstanceOf(ValidationError);
     expect(fixture.repository.listHistory).not.toHaveBeenCalled();
+  });
+
+  it('advances an authorized member read position through the shared service', async () => {
+    const fixture = createFixture();
+    const readMessageId = randomUUID();
+    const readState = {
+      conversationId,
+      userId,
+      lastReadMessageId: readMessageId,
+      lastReadAt: createdAt,
+    };
+    fixture.repository.advanceReadPosition.mockResolvedValue(readState);
+
+    await expect(
+      fixture.service.markRead(userId, { conversationId, messageId: readMessageId }),
+    ).resolves.toBe(readState);
+    expect(fixture.repository.advanceReadPosition).toHaveBeenCalledWith({
+      conversationId,
+      userId,
+      messageId: readMessageId,
+    });
+  });
+
+  it('validates and authorizes read updates before changing persisted state', async () => {
+    const fixture = createFixture({ id: conversationId, type: 'DIRECT', members: [] });
+
+    await expect(
+      fixture.service.markRead(userId, { conversationId, messageId: 'not-a-uuid' }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(fixture.accessRepository.findAccessContext).not.toHaveBeenCalled();
+
+    await expect(
+      fixture.service.markRead(userId, { conversationId, messageId: randomUUID() }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(fixture.repository.advanceReadPosition).not.toHaveBeenCalled();
   });
 });
