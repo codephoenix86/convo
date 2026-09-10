@@ -55,6 +55,8 @@ export const initializeUploadBodySchema = z
 
 export const initializeUploadCommandSchema = initializeUploadBodySchema;
 
+export const attachmentIdParamsSchema = z.object({ id: z.uuid() }).strict();
+
 export function getFileExtension(fileName) {
   const separatorIndex = fileName.lastIndexOf('.');
 

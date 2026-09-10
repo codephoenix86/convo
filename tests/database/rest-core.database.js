@@ -6,6 +6,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { db } from '../../src/config/db.js';
 import { hashPassword } from '../../src/modules/auth/password.js';
+import { conversationsRepository } from '../../src/modules/conversations/conversations.repository.js';
+import { messagesRepository } from '../../src/modules/messages/messages.repository.js';
+import { createMessagesService } from '../../src/modules/messages/messages.service.js';
 
 const users = Object.freeze({
   alice: {
@@ -304,8 +307,95 @@ describe('database-backed message flow', () => {
   });
 });
 
-function createFixtureApp() {
+describe('database-backed attachment flow', () => {
+  it('persists verified metadata once and protects private downloads', async () => {
+    await createFixtureUsers();
+    const setupApp = createFixtureApp();
+    const direct = await authenticatedRequest(setupApp, 'alice-access')
+      .post('/conversations/direct')
+      .send({ userId: users.bob.id })
+      .expect(200);
+    const conversationId = direct.body.data.conversation.id;
+    const ownedStorageKey = `conversations/${conversationId}/users/${users.alice.id}/${randomUUID()}.png`;
+    const messages = createMessagesService({
+      repository: messagesRepository,
+      accessRepository: conversationsRepository,
+      storage: {
+        inspectObject: async () => ({
+          mimeType: 'image/png',
+          size: 2048,
+          metadata: {
+            'conversation-id': conversationId,
+            'uploader-id': users.alice.id,
+            'declared-size': '2048',
+          },
+        }),
+      },
+    });
+    const app = createFixtureApp({ messages });
+    const clientMessageId = randomUUID();
+
+    const created = await sendMessage(app, 'alice-access', conversationId, {
+      clientMessageId,
+      body: 'Attached image',
+      attachments: [{ storageKey: ownedStorageKey, width: 640, height: 480 }],
+    }).expect(201);
+    const attachment = created.body.data.message.attachments[0];
+
+    expect(created.body.data.message.body).toBe('Attached image');
+    expect(attachment).toMatchObject({
+      storageKey: ownedStorageKey,
+      mimeType: 'image/png',
+      size: 2048,
+      width: 640,
+      height: 480,
+      url: `/attachments/${attachment.id}/content`,
+    });
+    expect(await db.attachment.count()).toBe(1);
+
+    const retry = await sendMessage(app, 'alice-access', conversationId, {
+      clientMessageId,
+      body: 'Attached image',
+      attachments: [{ storageKey: ownedStorageKey, width: 640, height: 480 }],
+    }).expect(200);
+    expect(retry.body.data.message.id).toBe(created.body.data.message.id);
+    expect(await db.attachment.count()).toBe(1);
+
+    await sendMessage(app, 'alice-access', conversationId, {
+      clientMessageId: randomUUID(),
+      body: 'Cannot reuse an upload',
+      attachments: [{ storageKey: ownedStorageKey }],
+    }).expect(409);
+
+    const history = await authenticatedRequest(app, 'bob-access')
+      .get(`/conversations/${conversationId}/messages`)
+      .expect(200);
+    expect(history.body.data.items[0].attachments[0]).toMatchObject({
+      id: attachment.id,
+      url: `/attachments/${attachment.id}/content`,
+    });
+
+    await authenticatedRequest(app, 'bob-access')
+      .get(`/attachments/${attachment.id}/content`)
+      .expect(307)
+      .expect('location', /X-Amz-Signature=/u);
+    await authenticatedRequest(app, 'charlie-access')
+      .get(`/attachments/${attachment.id}/content`)
+      .expect(404);
+
+    const deleted = await authenticatedRequest(app, 'alice-access')
+      .delete(`/messages/${created.body.data.message.id}`)
+      .expect(200);
+    expect(deleted.body.data.message.attachments).toEqual([]);
+    await authenticatedRequest(app, 'bob-access')
+      .get(`/attachments/${attachment.id}/content`)
+      .expect(404);
+  });
+});
+
+function createFixtureApp(overrides = {}) {
   return createApp({
+    ...overrides,
     accessTokenVerifier: async (token) => {
       const userId = accessTokens.get(token);
 

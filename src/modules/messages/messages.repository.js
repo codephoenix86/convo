@@ -1,5 +1,15 @@
 import { db } from '../../config/db.js';
-import { NotFoundError } from '../../lib/errors.js';
+import { ConflictError, NotFoundError } from '../../lib/errors.js';
+
+const attachmentSelect = Object.freeze({
+  id: true,
+  storageKey: true,
+  mimeType: true,
+  size: true,
+  width: true,
+  height: true,
+  createdAt: true,
+});
 
 const messageSelect = Object.freeze({
   id: true,
@@ -20,6 +30,10 @@ const messageSelect = Object.freeze({
       avatarUrl: true,
     },
   },
+  attachments: {
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: attachmentSelect,
+  },
 });
 const receiptPositions = Object.freeze({
   delivered: Object.freeze({
@@ -34,7 +48,7 @@ const receiptPositions = Object.freeze({
 
 export function createMessagesRepository(database = db) {
   return {
-    async create({ conversationId, senderId, clientMessageId, body, replyToId }) {
+    async create({ conversationId, senderId, clientMessageId, body, replyToId, attachments = [] }) {
       try {
         const result = await database.conversation.update({
           where: {
@@ -50,6 +64,13 @@ export function createMessagesRepository(database = db) {
                 body,
                 type: 'TEXT',
                 replyToId: replyToId ?? null,
+                ...(attachments.length
+                  ? {
+                      attachments: {
+                        create: attachments,
+                      },
+                    }
+                  : {}),
               },
             },
           },
@@ -78,6 +99,8 @@ export function createMessagesRepository(database = db) {
           if (message) {
             return { message, created: false };
           }
+
+          throw new ConflictError('An attachment has already been used');
         }
 
         if (isRecordNotFoundError(error)) {

@@ -119,6 +119,7 @@ model Message {
   replies         Message[]            @relation("MessageReplies")
   lastDeliveredTo ConversationMember[] @relation("MemberLastDeliveredMessage")
   lastReadBy      ConversationMember[] @relation("MemberLastReadMessage")
+  attachments     Attachment[]
 
   @@unique([conversationId, id], map: "messages_conversation_id_id_key")
   @@unique([senderId, conversationId, clientMessageId], map: "messages_sender_conversation_client_id_key")
@@ -126,4 +127,20 @@ model Message {
   @@index([conversationId, replyToId], map: "messages_reply_to_idx")
   @@index([senderId], map: "messages_sender_id_idx")
   @@map("messages")
+}
+
+model Attachment {
+  id         String   @id @default(uuid()) @db.Uuid
+  messageId  String   @map("message_id") @db.Uuid
+  storageKey String   @unique(map: "attachments_storage_key_key") @map("storage_key") @db.VarChar(1024)
+  mimeType   String   @map("mime_type") @db.VarChar(255)
+  size       Int
+  width      Int?
+  height     Int?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId], map: "attachments_message_id_idx")
+  @@map("attachments")
 }

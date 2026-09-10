@@ -36,9 +36,12 @@ function createFixture(context = memberContext()) {
     messageEdited: vi.fn(),
     messageDeleted: vi.fn(),
   };
-  const service = createMessagesService({ repository, accessRepository, messageEvents });
+  const storage = {
+    inspectObject: vi.fn(),
+  };
+  const service = createMessagesService({ repository, accessRepository, messageEvents, storage });
 
-  return { repository, accessRepository, messageEvents, service };
+  return { repository, accessRepository, messageEvents, storage, service };
 }
 
 function memberContext() {
@@ -106,6 +109,156 @@ describe('messages service', () => {
     ).resolves.toBe(result);
 
     expect(fixture.messageEvents.messageCreated).not.toHaveBeenCalled();
+  });
+
+  it('verifies and atomically creates an attachment message', async () => {
+    const fixture = createFixture();
+    const attachmentId = randomUUID();
+    const uploadId = randomUUID();
+    const storageKey = `conversations/${conversationId}/users/${userId}/${uploadId}.png`;
+    const persisted = message({
+      body: 'Attached image',
+      attachments: [
+        {
+          id: attachmentId,
+          storageKey,
+          mimeType: 'image/png',
+          size: 2048,
+          width: 640,
+          height: 480,
+          createdAt,
+        },
+      ],
+    });
+    fixture.storage.inspectObject.mockResolvedValue({
+      mimeType: 'image/png',
+      size: 2048,
+      metadata: {
+        'conversation-id': conversationId,
+        'uploader-id': userId,
+        'declared-size': '2048',
+      },
+    });
+    fixture.repository.create.mockResolvedValue({ message: persisted, created: true });
+
+    const result = await fixture.service.send(userId, {
+      conversationId,
+      clientMessageId,
+      body: 'Attached image',
+      attachments: [{ storageKey, width: 640, height: 480 }],
+    });
+
+    expect(fixture.storage.inspectObject).toHaveBeenCalledWith(storageKey);
+    expect(fixture.repository.create).toHaveBeenCalledWith({
+      conversationId,
+      senderId: userId,
+      clientMessageId,
+      body: 'Attached image',
+      replyToId: null,
+      attachments: [
+        {
+          storageKey,
+          mimeType: 'image/png',
+          size: 2048,
+          width: 640,
+          height: 480,
+        },
+      ],
+    });
+    expect(result.message.attachments[0]).toMatchObject({
+      id: attachmentId,
+      storageKey,
+      url: `/attachments/${attachmentId}/content`,
+    });
+    expect(fixture.messageEvents.messageCreated).toHaveBeenCalledWith({
+      message: result.message,
+    });
+  });
+
+  it('rejects unowned, missing, or inconsistent uploaded objects before persistence', async () => {
+    const fixture = createFixture();
+    const ownedStorageKey = `conversations/${conversationId}/users/${userId}/${randomUUID()}.pdf`;
+    const otherUserStorageKey = `conversations/${conversationId}/users/${randomUUID()}/${randomUUID()}.pdf`;
+
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Attached file',
+        attachments: [{ storageKey: otherUserStorageKey }],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(fixture.storage.inspectObject).not.toHaveBeenCalled();
+
+    fixture.storage.inspectObject.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      mimeType: 'application/pdf',
+      size: 100,
+      metadata: {
+        'conversation-id': conversationId,
+        'uploader-id': randomUUID(),
+        'declared-size': '100',
+      },
+    });
+
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Attached file',
+        attachments: [{ storageKey: ownedStorageKey }],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Attached file',
+        attachments: [{ storageKey: ownedStorageKey }],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(fixture.repository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported uploaded metadata and dimensions on non-images', async () => {
+    const fixture = createFixture();
+    const storageKey = `conversations/${conversationId}/users/${userId}/${randomUUID()}.pdf`;
+    fixture.storage.inspectObject
+      .mockResolvedValueOnce({
+        mimeType: 'application/zip',
+        size: 100,
+        metadata: {
+          'conversation-id': conversationId,
+          'uploader-id': userId,
+          'declared-size': '100',
+        },
+      })
+      .mockResolvedValueOnce({
+        mimeType: 'application/pdf',
+        size: 100,
+        metadata: {
+          'conversation-id': conversationId,
+          'uploader-id': userId,
+          'declared-size': '100',
+        },
+      });
+
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Attached file',
+        attachments: [{ storageKey }],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Attached file',
+        attachments: [{ storageKey, width: 100, height: 100 }],
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(fixture.repository.create).not.toHaveBeenCalled();
   });
 
   it('validates the complete send command before authorization or persistence', async () => {
@@ -304,14 +457,26 @@ describe('messages service', () => {
 
   it('soft deletes an owned message and publishes a redacted tombstone', async () => {
     const fixture = createFixture();
-    const original = message();
+    const original = message({
+      attachments: [
+        {
+          id: randomUUID(),
+          storageKey: 'private/file.png',
+          mimeType: 'image/png',
+          size: 100,
+          width: null,
+          height: null,
+          createdAt,
+        },
+      ],
+    });
     const deleted = message({ ...original, deletedAt: createdAt });
     fixture.repository.findMutationContext.mockResolvedValue(original);
     fixture.repository.softDelete.mockResolvedValue(deleted);
 
     const result = await fixture.service.delete(userId, { messageId: original.id });
 
-    expect(result).toEqual({ ...deleted, body: null });
+    expect(result).toEqual({ ...deleted, body: null, attachments: [] });
     expect(fixture.repository.softDelete).toHaveBeenCalledWith({
       conversationId,
       messageId: original.id,

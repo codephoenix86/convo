@@ -23,15 +23,27 @@ function createFixture() {
       url: 'https://storage.example.com/signed-upload',
       expiresIn: 300,
     }),
+    createDownloadUrl: vi.fn().mockResolvedValue({
+      url: 'https://storage.example.com/signed-download',
+      expiresIn: 300,
+    }),
+  };
+  const repository = {
+    findDownloadContext: vi.fn().mockResolvedValue({
+      id: uploadId,
+      storageKey: 'private/upload.pdf',
+      mimeType: 'application/pdf',
+    }),
   };
   const service = createAttachmentsService({
     accessRepository,
+    repository,
     storage,
     createId: () => uploadId,
     now: () => now,
   });
 
-  return { accessRepository, storage, service };
+  return { accessRepository, repository, storage, service };
 }
 
 describe('attachments service', () => {
@@ -101,5 +113,29 @@ describe('attachments service', () => {
     );
     expect(fixture.accessRepository.findAccessContext).not.toHaveBeenCalled();
     expect(fixture.storage.createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('signs a private download only after the repository authorizes access', async () => {
+    const fixture = createFixture();
+
+    await expect(fixture.service.createDownload(userId, uploadId)).resolves.toEqual({
+      url: 'https://storage.example.com/signed-download',
+      expiresIn: 300,
+    });
+    expect(fixture.repository.findDownloadContext).toHaveBeenCalledWith({
+      attachmentId: uploadId,
+      userId,
+    });
+    expect(fixture.storage.createDownloadUrl).toHaveBeenCalledWith('private/upload.pdf');
+  });
+
+  it('does not sign downloads hidden from the current user', async () => {
+    const fixture = createFixture();
+    fixture.repository.findDownloadContext.mockResolvedValue(null);
+
+    await expect(fixture.service.createDownload(userId, uploadId)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    expect(fixture.storage.createDownloadUrl).not.toHaveBeenCalled();
   });
 });

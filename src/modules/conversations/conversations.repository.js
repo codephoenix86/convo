@@ -34,6 +34,18 @@ const conversationInclude = Object.freeze({
       updatedAt: true,
       editedAt: true,
       deletedAt: true,
+      attachments: {
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          storageKey: true,
+          mimeType: true,
+          size: true,
+          width: true,
+          height: true,
+          createdAt: true,
+        },
+      },
     },
   },
 });

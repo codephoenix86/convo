@@ -91,6 +91,78 @@ describe('POST /conversations/:id/messages', () => {
     expect(messages.send).not.toHaveBeenCalled();
   });
 
+  it('accepts an attachment message with bounded image dimensions', async () => {
+    const messages = createMessages();
+    const storageKey = `conversations/${conversationId}/users/${userId}/${randomUUID()}.png`;
+    const attachmentId = randomUUID();
+    const attachedMessage = {
+      ...message,
+      body: 'Attached image',
+      attachments: [
+        {
+          id: attachmentId,
+          storageKey,
+          mimeType: 'image/png',
+          size: 2048,
+          width: 640,
+          height: 480,
+          url: `/attachments/${attachmentId}/content`,
+        },
+      ],
+    };
+    messages.send.mockResolvedValue({ message: attachedMessage, created: true });
+
+    const response = await request(createAuthenticatedApp(messages))
+      .post(`/conversations/${conversationId}/messages`)
+      .set('authorization', 'Bearer valid-access-token')
+      .send({
+        clientMessageId,
+        body: '  Attached image  ',
+        attachments: [{ storageKey, width: 640, height: 480 }],
+      })
+      .expect(201);
+
+    expect(messages.send).toHaveBeenCalledWith(userId, {
+      conversationId,
+      clientMessageId,
+      body: 'Attached image',
+      attachments: [{ storageKey, width: 640, height: 480 }],
+    });
+    expect(response.body.data.message.attachments[0]).toMatchObject({
+      storageKey,
+      mimeType: 'image/png',
+      size: 2048,
+    });
+  });
+
+  it('rejects duplicate attachment keys and incomplete dimensions', async () => {
+    const messages = createMessages();
+    const app = createAuthenticatedApp(messages);
+    const storageKey = `conversations/${conversationId}/users/${userId}/${randomUUID()}.png`;
+    const authorization = { authorization: 'Bearer valid-access-token' };
+
+    await request(app)
+      .post(`/conversations/${conversationId}/messages`)
+      .set(authorization)
+      .send({
+        clientMessageId,
+        body: 'Attached image',
+        attachments: [{ storageKey }, { storageKey }],
+      })
+      .expect(400);
+    await request(app)
+      .post(`/conversations/${conversationId}/messages`)
+      .set(authorization)
+      .send({
+        clientMessageId,
+        body: 'Attached image',
+        attachments: [{ storageKey, width: 640 }],
+      })
+      .expect(400);
+
+    expect(messages.send).not.toHaveBeenCalled();
+  });
+
   it('rejects unauthenticated message creation', async () => {
     const messages = createMessages();
 

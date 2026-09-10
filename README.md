@@ -83,6 +83,7 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | PATCH  | `/messages/:id`                      | Edit a sender-owned text message.                       |
 | DELETE | `/messages/:id`                      | Soft-delete a sender-owned text message.                |
 | POST   | `/attachments/upload-init`           | Create an authorized, short-lived signed upload.        |
+| GET    | `/attachments/:id/content`           | Redirect an authorized member to a signed download.     |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -91,6 +92,10 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 Call `POST /attachments/upload-init` with `{ conversationId, fileName, mimeType, size }`. The caller must be a current conversation member. JPEG, PNG, WebP, GIF, PDF, and plain-text files up to 10 MiB are accepted, and the extension must match the declared MIME type.
 
 The response contains a server-generated `storageKey`, a short-lived signed `url`, `method: "PUT"`, required headers, and `expiresAt`. Upload the exact bytes directly to object storage using that method and those headers; binary data never passes through the API or PostgreSQL. Keys are scoped to the authenticated user and conversation, and the signed object metadata records both identities plus the declared size.
+
+After the upload succeeds, include up to four references in REST or Socket.IO `message:send` as `attachments: [{ storageKey, width?, height? }]`; image dimensions must be supplied together and the message still requires a non-empty text body. Before atomically creating the message and attachment rows, the server inspects object storage and verifies the key owner, conversation, MIME type, extension, and exact byte size. A storage key can belong to only one message.
+
+Message, history, inbox, acknowledgement, and realtime payloads return attachment metadata with an authorized relative `url`. Requesting that URL rechecks current conversation membership and redirects to a new short-lived signed download. Soft-deleted messages expose no attachments and their download routes return `404`.
 
 Keep the bucket private and configure its CORS policy to allow `PUT` with `Content-Type` from the browser origins listed in `CLIENT_ORIGINS`.
 
@@ -180,6 +185,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
 - REST and Socket.IO message mutations share sender-ownership rules, atomically update PostgreSQL, and redact soft-deleted bodies from responses and broadcasts.
 - Attachment upload initialization validates membership, MIME type, extension, and a 10 MiB size limit before issuing a user-scoped, short-lived S3-compatible upload URL.
+- Uploaded-object ownership and metadata are revalidated before attachment rows are atomically associated with a message; private downloads recheck membership and soft-delete state.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.

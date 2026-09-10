@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { NotFoundError } from '../../src/lib/errors.js';
+import { ConflictError, NotFoundError } from '../../src/lib/errors.js';
 import { createMessagesRepository } from '../../src/modules/messages/messages.repository.js';
 
 const userId = randomUUID();
@@ -75,6 +75,68 @@ describe('messages repository', () => {
       }),
     );
     expect(result).toEqual({ message: storedMessage, created: false });
+  });
+
+  it('creates attachment rows atomically with their message', async () => {
+    const attachment = {
+      storageKey: `conversations/${conversationId}/users/${userId}/${randomUUID()}.png`,
+      mimeType: 'image/png',
+      size: 2048,
+      width: 640,
+      height: 480,
+    };
+    const database = {
+      conversation: { update: vi.fn().mockResolvedValue({ messages: [storedMessage] }) },
+    };
+    const repository = createMessagesRepository(database);
+
+    await repository.create({
+      conversationId,
+      senderId: userId,
+      clientMessageId,
+      body: 'Attached image',
+      replyToId: null,
+      attachments: [attachment],
+    });
+
+    expect(database.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          messages: {
+            create: {
+              senderId: userId,
+              clientMessageId,
+              body: 'Attached image',
+              type: 'TEXT',
+              replyToId: null,
+              attachments: { create: [attachment] },
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  it('maps reuse of an attachment by another message to a conflict', async () => {
+    const database = {
+      conversation: { update: vi.fn().mockRejectedValue({ code: 'P2002' }) },
+      message: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.create({
+        conversationId,
+        senderId: userId,
+        clientMessageId,
+        body: 'Duplicate attachment',
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: ConflictError.name,
+        message: 'An attachment has already been used',
+      }),
+    );
   });
 
   it('maps membership/unknown conversation failure without leaking existence', async () => {

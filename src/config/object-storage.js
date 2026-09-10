@@ -1,4 +1,9 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { env } from './env.js';
@@ -20,7 +25,46 @@ export function createS3ObjectStorage({ client, bucket, expiresIn, sign = getSig
 
       return { url, expiresIn };
     },
+
+    async inspectObject(storageKey) {
+      try {
+        const object = await client.send(
+          new HeadObjectCommand({
+            Bucket: bucket,
+            Key: storageKey,
+          }),
+        );
+
+        return {
+          mimeType: object.ContentType,
+          size: object.ContentLength,
+          metadata: object.Metadata ?? {},
+        };
+      } catch (error) {
+        if (isObjectNotFoundError(error)) {
+          return null;
+        }
+
+        throw error;
+      }
+    },
+
+    async createDownloadUrl(storageKey) {
+      const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: storageKey,
+      });
+      const url = await sign(client, command, { expiresIn });
+
+      return { url, expiresIn };
+    },
   };
+}
+
+function isObjectNotFoundError(error) {
+  return (
+    ['NotFound', 'NoSuchKey'].includes(error?.name) || error?.$metadata?.httpStatusCode === 404
+  );
 }
 
 const client = new S3Client({

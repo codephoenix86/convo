@@ -29,6 +29,7 @@ describe('message:send', () => {
   let clients;
   let accessRepository;
   let messageRepository;
+  let storage;
   let log;
   let storedMessage;
 
@@ -78,17 +79,28 @@ describe('message:send', () => {
           editedAt: null,
           deletedAt: null,
           sender: { id: senderId, username: 'sender', avatarUrl: null },
+          ...(input.attachments
+            ? {
+                attachments: input.attachments.map((attachment) => ({
+                  id: randomUUID(),
+                  ...attachment,
+                  createdAt: timestamp,
+                })),
+              }
+            : {}),
         };
 
         return { message: storedMessage, created: true };
       }),
       listHistory: vi.fn(),
     };
+    storage = { inspectObject: vi.fn() };
     const messageEvents = createRealtimeMessageEvents();
     const messages = createMessagesService({
       repository: messageRepository,
       accessRepository,
       messageEvents,
+      storage,
     });
     const roomCoordinator = createConversationRoomCoordinator();
 
@@ -190,6 +202,50 @@ describe('message:send', () => {
       }),
       'Socket event rejected',
     );
+  });
+
+  it('acknowledges and broadcasts verified attachment metadata', async () => {
+    const sender = await connectClient('sender-token');
+    const recipient = await connectClient('recipient-token');
+    const receivedEvent = once(recipient, 'message:new');
+    const storageKey = `conversations/${conversationId}/users/${senderId}/${randomUUID()}.png`;
+    storage.inspectObject.mockResolvedValue({
+      mimeType: 'image/png',
+      size: 2048,
+      metadata: {
+        'conversation-id': conversationId,
+        'uploader-id': senderId,
+        'declared-size': '2048',
+      },
+    });
+
+    const acknowledgement = await sender.timeout(1000).emitWithAck('message:send', {
+      conversationId,
+      clientMessageId,
+      body: 'Attached image',
+      attachments: [{ storageKey, width: 640, height: 480 }],
+    });
+
+    expect(acknowledgement).toMatchObject({
+      ok: true,
+      data: {
+        created: true,
+        message: {
+          body: 'Attached image',
+          attachments: [
+            {
+              storageKey,
+              mimeType: 'image/png',
+              size: 2048,
+              width: 640,
+              height: 480,
+              url: expect.stringMatching(/^\/attachments\/[0-9a-f-]+\/content$/u),
+            },
+          ],
+        },
+      },
+    });
+    await expect(receivedEvent).resolves.toEqual([{ message: acknowledgement.data.message }]);
   });
 
   it('returns validation details without reaching authorization', async () => {

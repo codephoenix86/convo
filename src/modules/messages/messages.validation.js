@@ -1,10 +1,26 @@
 import { z } from 'zod';
 
-const messageBodySchema = z
+const messageTextSchema = z
   .string()
   .trim()
-  .min(1, 'Message body must not be empty')
   .max(4000, 'Message body must contain at most 4000 characters');
+const messageBodySchema = messageTextSchema.min(1, 'Message body must not be empty');
+const attachmentReferenceSchema = z
+  .object({
+    storageKey: z.string().trim().min(1).max(1024),
+    width: z.number().int().min(1).max(20_000).optional(),
+    height: z.number().int().min(1).max(20_000).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.width === undefined) !== (value.height === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: [value.width === undefined ? 'width' : 'height'],
+        message: 'Image width and height must be provided together',
+      });
+    }
+  });
 
 export const conversationMessagesParamsSchema = z
   .object({
@@ -17,10 +33,22 @@ export const createMessageBodySchema = z
     clientMessageId: z.uuid(),
     body: messageBodySchema,
     replyToId: z.uuid().nullable().optional(),
+    attachments: z.array(attachmentReferenceSchema).max(4).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const storageKeys = value.attachments?.map((attachment) => attachment.storageKey) ?? [];
 
-export const sendMessageCommandSchema = createMessageBodySchema.extend({
+    if (new Set(storageKeys).size !== storageKeys.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['attachments'],
+        message: 'Attachment storage keys must be unique',
+      });
+    }
+  });
+
+export const sendMessageCommandSchema = createMessageBodySchema.safeExtend({
   conversationId: z.uuid(),
 });
 

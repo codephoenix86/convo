@@ -92,3 +92,39 @@ describe('POST /attachments/upload-init', () => {
     expect(attachments.initializeUpload).not.toHaveBeenCalled();
   });
 });
+
+describe('GET /attachments/:id/content', () => {
+  it('redirects an authorized download without exposing storage credentials', async () => {
+    const attachmentId = randomUUID();
+    const attachments = {
+      initializeUpload: vi.fn(),
+      createDownload: vi.fn().mockResolvedValue({
+        url: 'https://storage.example.com/signed-download',
+        expiresIn: 300,
+      }),
+    };
+
+    const response = await request(createAuthenticatedApp(attachments))
+      .get(`/attachments/${attachmentId}/content`)
+      .set('authorization', 'Bearer valid-access-token')
+      .expect(307);
+
+    expect(attachments.createDownload).toHaveBeenCalledWith(userId, attachmentId);
+    expect(response.headers.location).toBe('https://storage.example.com/signed-download');
+    expect(response.headers['cache-control']).toBe('private, no-store');
+  });
+
+  it('rejects malformed IDs and unauthenticated downloads before service logic', async () => {
+    const attachments = { initializeUpload: vi.fn(), createDownload: vi.fn() };
+
+    await request(createAuthenticatedApp(attachments))
+      .get('/attachments/not-a-uuid/content')
+      .set('authorization', 'Bearer valid-access-token')
+      .expect(400);
+    await request(createApp({ attachments }))
+      .get(`/attachments/${randomUUID()}/content`)
+      .expect(401);
+
+    expect(attachments.createDownload).not.toHaveBeenCalled();
+  });
+});

@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
 import { objectStorage } from '../../config/object-storage.js';
-import { ValidationError } from '../../lib/errors.js';
+import { NotFoundError, ValidationError } from '../../lib/errors.js';
 import { requireConversationMember } from '../conversations/conversation-access.js';
 import { conversationsRepository } from '../conversations/conversations.repository.js';
+import { attachmentsRepository } from './attachments.repository.js';
 import { getFileExtension, initializeUploadCommandSchema } from './attachments.validation.js';
 
 export function createAttachmentsService({
   accessRepository,
+  repository,
   storage,
   createId = randomUUID,
   now = () => new Date(),
@@ -46,6 +48,16 @@ export function createAttachmentsService({
         expiresAt: new Date(now().getTime() + signedUpload.expiresIn * 1000),
       };
     },
+
+    async createDownload(userId, attachmentId) {
+      const context = await repository.findDownloadContext({ attachmentId, userId });
+
+      if (!context) {
+        throw new NotFoundError('Attachment not found');
+      }
+
+      return storage.createDownloadUrl(context.storageKey);
+    },
   };
 }
 
@@ -67,5 +79,6 @@ function parseInitializeUploadCommand(input) {
 
 export const attachmentsService = createAttachmentsService({
   accessRepository: conversationsRepository,
+  repository: attachmentsRepository,
   storage: objectStorage,
 });
