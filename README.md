@@ -182,6 +182,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Request bodies are not logged.
 - Passwords use salted Argon2id hashes; opaque refresh tokens are stored only as SHA-256 hashes.
 - Access JWTs are signed with HS256 and restricted to the configured issuer, audience, and lifetime.
+- Helmet applies standard HTTP security headers, and REST CORS grants browser access only to origins in `CLIENT_ORIGINS` without enabling credentialed cookies.
 - Refresh tokens rotate atomically; current/all-session logout revokes server-side refresh state.
 - Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.

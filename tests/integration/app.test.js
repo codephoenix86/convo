@@ -44,6 +44,57 @@ describe('system endpoints', () => {
   });
 });
 
+describe('HTTP security policy', () => {
+  const database = { $queryRaw: vi.fn() };
+  const allowedOrigin = 'https://chat.example.com';
+
+  it('adds Helmet security headers', async () => {
+    const response = await request(createApp({ database })).get('/health').expect(200);
+
+    expect(response.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+  });
+
+  it('allows configured browser origins and exposes the request ID', async () => {
+    const response = await request(createApp({ database, allowedOrigins: [allowedOrigin] }))
+      .get('/health')
+      .set('origin', allowedOrigin)
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).toBe(allowedOrigin);
+    expect(response.headers['access-control-expose-headers']).toBe('X-Request-Id');
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(response.headers.vary).toContain('Origin');
+  });
+
+  it('handles an allowed preflight with explicit methods and headers', async () => {
+    const response = await request(createApp({ database, allowedOrigins: [allowedOrigin] }))
+      .options('/users/me')
+      .set('origin', allowedOrigin)
+      .set('access-control-request-method', 'PATCH')
+      .set('access-control-request-headers', 'authorization,content-type,x-request-id')
+      .expect(204);
+
+    expect(response.headers['access-control-allow-origin']).toBe(allowedOrigin);
+    expect(response.headers['access-control-allow-methods']).toContain('PATCH');
+    expect(response.headers['access-control-allow-headers']).toBe(
+      'Authorization,Content-Type,X-Request-Id',
+    );
+    expect(response.headers['access-control-max-age']).toBe('600');
+  });
+
+  it('does not grant CORS access to an unconfigured origin', async () => {
+    const response = await request(createApp({ database, allowedOrigins: [allowedOrigin] }))
+      .get('/health')
+      .set('origin', 'https://attacker.example.com')
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
 describe('HTTP error contract', () => {
   const database = { $queryRaw: vi.fn() };
 

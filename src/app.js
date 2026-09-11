@@ -1,6 +1,9 @@
+import cors from 'cors';
 import express from 'express';
+import helmet from 'helmet';
 
 import { db } from './config/db.js';
+import { env } from './config/env.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
@@ -21,6 +24,9 @@ import { createUsersRouter } from './modules/users/users.routes.js';
 import { usersService } from './modules/users/users.service.js';
 
 const JSON_BODY_LIMIT = '100kb';
+const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
+const CORS_ALLOWED_HEADERS = ['Authorization', 'Content-Type', 'X-Request-Id'];
+const CORS_EXPOSED_HEADERS = ['X-Request-Id'];
 
 export function createApp({
   database = db,
@@ -30,6 +36,7 @@ export function createApp({
   messages = messagesService,
   attachments = attachmentsService,
   accessTokenVerifier = verifyAccessToken,
+  allowedOrigins = env.CLIENT_ORIGINS,
   registerRoutes,
   requestLogging = requestLogger,
 } = {}) {
@@ -38,6 +45,17 @@ export function createApp({
   app.disable('x-powered-by');
   app.set('json escape', true);
   app.use(requestLogging);
+  app.use(helmet());
+  app.use(
+    cors({
+      origin: createCorsOriginValidator(allowedOrigins),
+      methods: CORS_METHODS,
+      allowedHeaders: CORS_ALLOWED_HEADERS,
+      exposedHeaders: CORS_EXPOSED_HEADERS,
+      credentials: false,
+      maxAge: 600,
+    }),
+  );
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
 
   app.use(createHealthRouter({ database }));
@@ -56,6 +74,14 @@ export function createApp({
   app.use(errorHandler);
 
   return app;
+}
+
+function createCorsOriginValidator(allowedOrigins) {
+  const allowedOriginSet = new Set(allowedOrigins);
+
+  return (origin, callback) => {
+    callback(null, origin === undefined || allowedOriginSet.has(origin));
+  };
 }
 
 export const app = createApp();
