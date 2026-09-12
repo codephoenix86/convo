@@ -7,9 +7,12 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { env } from './env.js';
+import { createLocalObjectStorage } from './local-object-storage.js';
 
 export function createS3ObjectStorage({ client, bucket, expiresIn, sign = getSignedUrl }) {
   return {
+    driver: 's3',
+
     async createUploadUrl({ storageKey, mimeType, size, metadata }) {
       const command = new PutObjectCommand({
         Bucket: bucket,
@@ -67,19 +70,33 @@ function isObjectNotFoundError(error) {
   );
 }
 
-const client = new S3Client({
-  region: env.OBJECT_STORAGE_REGION,
-  ...(env.OBJECT_STORAGE_ENDPOINT ? { endpoint: env.OBJECT_STORAGE_ENDPOINT } : {}),
-  forcePathStyle: env.OBJECT_STORAGE_FORCE_PATH_STYLE,
-  requestChecksumCalculation: 'WHEN_REQUIRED',
-  credentials: {
-    accessKeyId: env.OBJECT_STORAGE_ACCESS_KEY_ID,
-    secretAccessKey: env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
-  },
-});
+export function createObjectStorage(configuration = env) {
+  if (configuration.ATTACHMENT_STORAGE_DRIVER === 'local') {
+    return createLocalObjectStorage({
+      directory: configuration.LOCAL_STORAGE_DIRECTORY,
+      expiresIn: configuration.LOCAL_STORAGE_URL_TTL_SECONDS,
+      signingSecret: configuration.LOCAL_STORAGE_SIGNING_SECRET,
+    });
+  }
 
-export const objectStorage = createS3ObjectStorage({
-  client,
-  bucket: env.OBJECT_STORAGE_BUCKET,
-  expiresIn: env.OBJECT_STORAGE_PRESIGN_TTL_SECONDS,
-});
+  const client = new S3Client({
+    region: configuration.OBJECT_STORAGE_REGION,
+    ...(configuration.OBJECT_STORAGE_ENDPOINT
+      ? { endpoint: configuration.OBJECT_STORAGE_ENDPOINT }
+      : {}),
+    forcePathStyle: configuration.OBJECT_STORAGE_FORCE_PATH_STYLE,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    credentials: {
+      accessKeyId: configuration.OBJECT_STORAGE_ACCESS_KEY_ID,
+      secretAccessKey: configuration.OBJECT_STORAGE_SECRET_ACCESS_KEY,
+    },
+  });
+
+  return createS3ObjectStorage({
+    client,
+    bucket: configuration.OBJECT_STORAGE_BUCKET,
+    expiresIn: configuration.OBJECT_STORAGE_PRESIGN_TTL_SECONDS,
+  });
+}
+
+export const objectStorage = createObjectStorage();

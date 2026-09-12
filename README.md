@@ -2,7 +2,7 @@
 
 A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, and Prisma. Redis-backed horizontal scaling is planned after single-instance real-time correctness.
 
-Milestones A–D provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, and private S3-compatible attachments. Redis-backed multi-instance coordination remains an optional Milestone F concern.
+Milestones A–D provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, and private local or S3-compatible attachments. Redis-backed multi-instance coordination remains an optional Milestone F concern.
 
 ## Documentation
 
@@ -17,7 +17,7 @@ Milestones A–D provide the application foundation, authenticated REST and real
 - Node.js 24 LTS
 - npm 11 or later
 - PostgreSQL 18 or another Prisma-supported PostgreSQL release
-- An S3-compatible object-storage bucket
+- Local disk space, or an S3-compatible object-storage bucket
 
 ## Local setup
 
@@ -99,13 +99,13 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 
 Call `POST /attachments/upload-init` with `{ conversationId, fileName, mimeType, size }`. The caller must be a current conversation member. JPEG, PNG, WebP, GIF, PDF, and plain-text files up to 10 MiB are accepted, and the extension must match the declared MIME type.
 
-The response contains a server-generated `storageKey`, a short-lived signed `url`, `method: "PUT"`, required headers, and `expiresAt`. Upload the exact bytes directly to object storage using that method and those headers; binary data never passes through the API or PostgreSQL. Keys are scoped to the authenticated user and conversation, and the signed object metadata records both identities plus the declared size.
+The response contains a server-generated `storageKey`, a short-lived signed `url`, `method: "PUT"`, required headers, and `expiresAt`. Upload the exact bytes using that method and those headers. In `s3` mode bytes go directly to the bucket; in `local` mode the signed URL sends them to the API for storage on disk. Keys are scoped to the authenticated user and conversation, and the signed object metadata records both identities plus the declared size.
 
 After the upload succeeds, include up to four references in REST or Socket.IO `message:send` as `attachments: [{ storageKey, width?, height? }]`; image dimensions must be supplied together and the message still requires a non-empty text body. Before atomically creating the message and attachment rows, the server inspects object storage and verifies the key owner, conversation, MIME type, extension, and exact byte size. A storage key can belong to only one message.
 
 Message, history, inbox, acknowledgement, and realtime payloads return attachment metadata with an authorized relative `url`. Requesting that URL rechecks current conversation membership and redirects to a new short-lived signed download. Soft-deleted messages expose no attachments and their download routes return `404`.
 
-Keep the bucket private and configure its CORS policy to allow `PUT` with `Content-Type` from the browser origins listed in `CLIENT_ORIGINS`.
+Set `ATTACHMENT_STORAGE_DRIVER=local` for filesystem storage (the default example), or `ATTACHMENT_STORAGE_DRIVER=s3` for S3-compatible storage. Local signed URLs use the API origin and need no bucket or S3 credentials. For S3, keep the bucket private and configure its CORS policy to allow `PUT` with `Content-Type` from the browser origins listed in `CLIENT_ORIGINS`.
 
 ## Socket.IO connections
 
@@ -152,28 +152,34 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 
 ## Environment variables
 
-| Variable                             | Purpose                                       |
-| ------------------------------------ | --------------------------------------------- |
-| `NODE_ENV`                           | `development`, `test`, or `production`.       |
-| `HOST`                               | HTTP bind address.                            |
-| `PORT`                               | HTTP port from 1 through 65535.               |
-| `LOG_LEVEL`                          | Pino log threshold.                           |
-| `DATABASE_URL`                       | PostgreSQL connection URL.                    |
-| `TEST_DATABASE_URL`                  | Disposable PostgreSQL database used by tests. |
-| `DATABASE_CONNECTION_TIMEOUT_MS`     | Database connection timeout from 100–30000ms. |
-| `ACCESS_TOKEN_SECRET`                | Secret of at least 32 characters for JWTs.    |
-| `ACCESS_TOKEN_TTL_SECONDS`           | Access-token lifetime from 60–3600 seconds.   |
-| `REFRESH_TOKEN_TTL_DAYS`             | Refresh-session lifetime from 1–90 days.      |
-| `JWT_ISSUER`                         | Expected access-token issuer.                 |
-| `JWT_AUDIENCE`                       | Expected access-token audience.               |
-| `CLIENT_ORIGINS`                     | Comma-separated browser origin allowlist.     |
-| `OBJECT_STORAGE_REGION`              | S3-compatible bucket region.                  |
-| `OBJECT_STORAGE_BUCKET`              | Private attachment bucket name.               |
-| `OBJECT_STORAGE_ENDPOINT`            | Optional HTTP(S) endpoint for R2/MinIO/etc.   |
-| `OBJECT_STORAGE_ACCESS_KEY_ID`       | Object-storage access-key identifier.         |
-| `OBJECT_STORAGE_SECRET_ACCESS_KEY`   | Object-storage secret access key.             |
-| `OBJECT_STORAGE_FORCE_PATH_STYLE`    | Use path-style bucket addressing.             |
-| `OBJECT_STORAGE_PRESIGN_TTL_SECONDS` | Signed-upload lifetime from 60–900 seconds.   |
+| Variable                             | Purpose                                                     |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `NODE_ENV`                           | `development`, `test`, or `production`.                     |
+| `HOST`                               | HTTP bind address.                                          |
+| `PORT`                               | HTTP port from 1 through 65535.                             |
+| `LOG_LEVEL`                          | Pino log threshold.                                         |
+| `DATABASE_URL`                       | PostgreSQL connection URL.                                  |
+| `TEST_DATABASE_URL`                  | Disposable PostgreSQL database used by tests.               |
+| `DATABASE_CONNECTION_TIMEOUT_MS`     | Database connection timeout from 100–30000ms.               |
+| `ACCESS_TOKEN_SECRET`                | Secret of at least 32 characters for JWTs.                  |
+| `ACCESS_TOKEN_TTL_SECONDS`           | Access-token lifetime from 60–3600 seconds.                 |
+| `REFRESH_TOKEN_TTL_DAYS`             | Refresh-session lifetime from 1–90 days.                    |
+| `JWT_ISSUER`                         | Expected access-token issuer.                               |
+| `JWT_AUDIENCE`                       | Expected access-token audience.                             |
+| `CLIENT_ORIGINS`                     | Comma-separated browser origin allowlist.                   |
+| `ATTACHMENT_STORAGE_DRIVER`          | Attachment backend: `local` or `s3`.                        |
+| `LOCAL_STORAGE_DIRECTORY`            | Local attachment directory (default `./storage`).           |
+| `LOCAL_STORAGE_SIGNING_SECRET`       | Optional local URL secret; defaults to access-token secret. |
+| `LOCAL_STORAGE_URL_TTL_SECONDS`      | Local signed-URL lifetime from 60–900 seconds.              |
+| `OBJECT_STORAGE_REGION`              | S3-compatible bucket region.                                |
+| `OBJECT_STORAGE_BUCKET`              | Private attachment bucket name.                             |
+| `OBJECT_STORAGE_ENDPOINT`            | Optional HTTP(S) endpoint for R2/MinIO/etc.                 |
+| `OBJECT_STORAGE_ACCESS_KEY_ID`       | Object-storage access-key identifier.                       |
+| `OBJECT_STORAGE_SECRET_ACCESS_KEY`   | Object-storage secret access key.                           |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE`    | Use path-style bucket addressing.                           |
+| `OBJECT_STORAGE_PRESIGN_TTL_SECONDS` | Signed-upload lifetime from 60–900 seconds.                 |
+
+The `OBJECT_STORAGE_*` region, bucket, and credential variables are required only when `ATTACHMENT_STORAGE_DRIVER=s3`. Local storage is intended for a single API instance with persistent disk; use S3-compatible storage when instances need to share attachment bytes.
 
 ## Operational behavior
 
@@ -194,7 +200,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
 - REST and Socket.IO message mutations share sender-ownership rules, atomically update PostgreSQL, and redact soft-deleted bodies from responses and broadcasts.
-- Attachment upload initialization validates membership, MIME type, extension, and a 10 MiB size limit before issuing a user-scoped, short-lived S3-compatible upload URL.
+- Attachment upload initialization validates membership, MIME type, extension, and a 10 MiB size limit before issuing a user-scoped, short-lived local or S3-compatible upload URL.
 - Uploaded-object ownership and metadata are revalidated before attachment rows are atomically associated with a message; private downloads recheck membership and soft-delete state.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
 - Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.

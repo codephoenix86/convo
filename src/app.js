@@ -4,6 +4,7 @@ import helmet from 'helmet';
 
 import { db } from './config/db.js';
 import { env } from './config/env.js';
+import { objectStorage } from './config/object-storage.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
@@ -35,6 +36,7 @@ export function createApp({
   conversations = conversationsService,
   messages = messagesService,
   attachments = attachmentsService,
+  attachmentStorage = objectStorage,
   accessTokenVerifier = verifyAccessToken,
   allowedOrigins = env.CLIENT_ORIGINS,
   registerRoutes,
@@ -64,7 +66,10 @@ export function createApp({
   app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));
   app.use('/conversations', createMessagesRouter({ messages, accessTokenVerifier }));
   app.use('/messages', createMessageMutationsRouter({ messages, accessTokenVerifier }));
-  app.use('/attachments', createAttachmentsRouter({ attachments, accessTokenVerifier }));
+  app.use(
+    '/attachments',
+    createAttachmentsRouter({ attachments, accessTokenVerifier, storage: attachmentStorage }),
+  );
 
   if (registerRoutes) {
     registerRoutes(app);

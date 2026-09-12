@@ -11,7 +11,7 @@ flowchart LR
   Repositories[Prisma repositories]
   PostgreSQL[(PostgreSQL)]
   Memory[(Process memory)]
-  Storage[(S3-compatible object storage)]
+  Storage[(Local disk or S3-compatible storage)]
   Redis[(Redis adapter and ephemeral state\nMilestone F, optional)]
 
   Client -->|HTTPS JSON| HTTP
@@ -20,7 +20,7 @@ flowchart LR
   Socket --> Services
   Services --> Repositories
   Repositories --> PostgreSQL
-  Services -->|presign, HEAD| Storage
+  Services -->|sign, inspect| Storage
   Client -->|signed upload/download| Storage
   Socket -->|typing, presence, connection counts| Memory
   Socket -.->|horizontal scaling later| Redis
@@ -34,7 +34,7 @@ PostgreSQL is the durable source of truth for users, refresh sessions, conversat
 
 Typing and presence are deliberately process-local and ephemeral in the single-instance implementation. They expire or are cleared on disconnect and are never persisted as chat history. Redis is not required for Milestone D; a Redis adapter and shared TTL-backed state belong to the optional multi-instance production milestone.
 
-Attachment bytes travel directly between the client and a private S3-compatible bucket. The API signs short-lived operations, verifies uploaded object metadata before message creation, and stores only metadata in PostgreSQL.
+Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, bytes travel directly between the client and a private S3-compatible bucket. With `local`, short-lived signed endpoints send bytes through the API to persistent disk. Both drivers expose the same sign-and-inspect contract, verify uploaded metadata before message creation, and store searchable attachment metadata in PostgreSQL.
 
 ## Module boundaries
 

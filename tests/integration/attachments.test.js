@@ -128,3 +128,40 @@ describe('GET /attachments/:id/content', () => {
     expect(attachments.createDownload).not.toHaveBeenCalled();
   });
 });
+
+describe('local attachment transport', () => {
+  it('accepts signed upload bytes and serves signed downloads without authentication', async () => {
+    const attachmentStorage = {
+      driver: 'local',
+      storeUpload: vi.fn().mockResolvedValue(undefined),
+      readDownload: vi.fn().mockResolvedValue({
+        body: Buffer.from('hello'),
+        mimeType: 'text/plain',
+      }),
+    };
+    const app = createApp({
+      attachments: { initializeUpload: vi.fn(), createDownload: vi.fn() },
+      attachmentStorage,
+    });
+
+    await request(app)
+      .put('/attachments/local/upload?token=signed-upload-token')
+      .set('content-type', 'text/plain')
+      .send('hello')
+      .expect(204);
+
+    expect(attachmentStorage.storeUpload).toHaveBeenCalledWith('signed-upload-token', {
+      body: Buffer.from('hello'),
+      mimeType: 'text/plain',
+    });
+
+    const response = await request(app)
+      .get('/attachments/local/download?token=signed-download-token')
+      .expect(200)
+      .expect('content-type', /^text\/plain/u);
+
+    expect(attachmentStorage.readDownload).toHaveBeenCalledWith('signed-download-token');
+    expect(response.text).toBe('hello');
+    expect(response.headers['cache-control']).toBe('private, no-store');
+  });
+});

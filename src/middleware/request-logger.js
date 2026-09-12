@@ -10,6 +10,15 @@ export function createRequestLogger(rootLogger = logger) {
   return pinoHttp({
     logger: rootLogger,
     quietReqLogger: true,
+    serializers: {
+      req(request) {
+        if (request.url?.startsWith('/attachments/local/')) {
+          return { ...request, url: request.url.split('?')[0] };
+        }
+
+        return request;
+      },
+    },
     genReqId(request, response) {
       const incomingRequestId = request.headers['x-request-id'];
       const requestId = isValidRequestId(incomingRequestId) ? incomingRequestId : randomUUID();

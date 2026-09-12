@@ -53,36 +53,70 @@ const optionalHttpUrlSchema = z.preprocess(
     .optional(),
 );
 
-const environmentSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  HOST: z.string().trim().min(1, 'must not be empty').default('0.0.0.0'),
-  PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  DATABASE_URL: z
-    .string({ error: 'is required' })
-    .trim()
-    .min(1, 'is required')
-    .refine(isPostgresUrl, 'must be a valid PostgreSQL URL'),
-  DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
-  ACCESS_TOKEN_SECRET: z
-    .string({ error: 'is required' })
-    .min(32, 'must contain at least 32 characters'),
-  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
-  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
-  JWT_ISSUER: z.string().trim().min(1).max(100).default('convo-api'),
-  JWT_AUDIENCE: z.string().trim().min(1).max(100).default('convo-client'),
-  CLIENT_ORIGINS: clientOriginsSchema,
-  OBJECT_STORAGE_REGION: z.string({ error: 'is required' }).trim().min(1, 'is required'),
-  OBJECT_STORAGE_BUCKET: z.string({ error: 'is required' }).trim().min(1, 'is required').max(255),
-  OBJECT_STORAGE_ENDPOINT: optionalHttpUrlSchema,
-  OBJECT_STORAGE_ACCESS_KEY_ID: z.string({ error: 'is required' }).trim().min(1, 'is required'),
-  OBJECT_STORAGE_SECRET_ACCESS_KEY: z.string({ error: 'is required' }).min(1, 'is required'),
-  OBJECT_STORAGE_FORCE_PATH_STYLE: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((value) => value === 'true'),
-  OBJECT_STORAGE_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
-});
+const optionalNonEmptyStringSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().trim().min(1, 'must not be empty').optional(),
+);
+
+const environmentSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    HOST: z.string().trim().min(1, 'must not be empty').default('0.0.0.0'),
+    PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default('info'),
+    DATABASE_URL: z
+      .string({ error: 'is required' })
+      .trim()
+      .min(1, 'is required')
+      .refine(isPostgresUrl, 'must be a valid PostgreSQL URL'),
+    DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
+    ACCESS_TOKEN_SECRET: z
+      .string({ error: 'is required' })
+      .min(32, 'must contain at least 32 characters'),
+    ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+    REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+    JWT_ISSUER: z.string().trim().min(1).max(100).default('convo-api'),
+    JWT_AUDIENCE: z.string().trim().min(1).max(100).default('convo-client'),
+    CLIENT_ORIGINS: clientOriginsSchema,
+    ATTACHMENT_STORAGE_DRIVER: z.enum(['s3', 'local']).default('s3'),
+    LOCAL_STORAGE_DIRECTORY: z.string().trim().min(1, 'must not be empty').default('./storage'),
+    LOCAL_STORAGE_SIGNING_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32, 'must contain at least 32 characters').optional(),
+    ),
+    LOCAL_STORAGE_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+    OBJECT_STORAGE_REGION: optionalNonEmptyStringSchema,
+    OBJECT_STORAGE_BUCKET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().trim().min(1, 'is required').max(255).optional(),
+    ),
+    OBJECT_STORAGE_ENDPOINT: optionalHttpUrlSchema,
+    OBJECT_STORAGE_ACCESS_KEY_ID: optionalNonEmptyStringSchema,
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: optionalNonEmptyStringSchema,
+    OBJECT_STORAGE_FORCE_PATH_STYLE: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    OBJECT_STORAGE_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+  })
+  .superRefine((value, context) => {
+    if (value.ATTACHMENT_STORAGE_DRIVER !== 's3') {
+      return;
+    }
+
+    for (const field of [
+      'OBJECT_STORAGE_REGION',
+      'OBJECT_STORAGE_BUCKET',
+      'OBJECT_STORAGE_ACCESS_KEY_ID',
+      'OBJECT_STORAGE_SECRET_ACCESS_KEY',
+    ]) {
+      if (!value[field]) {
+        context.addIssue({ code: 'custom', path: [field], message: 'is required' });
+      }
+    }
+  });
 
 loadLocalEnvironment();
 
@@ -109,7 +143,13 @@ function parseEnvironment(values) {
     throw new Error(`Invalid environment configuration:\n${details}`);
   }
 
-  return Object.freeze(result.data);
+  const configuration = result.data;
+
+  if (configuration.ATTACHMENT_STORAGE_DRIVER === 'local') {
+    configuration.LOCAL_STORAGE_SIGNING_SECRET ??= configuration.ACCESS_TOKEN_SECRET;
+  }
+
+  return Object.freeze(configuration);
 }
 
 function isPostgresUrl(value) {

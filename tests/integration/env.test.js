@@ -48,6 +48,9 @@ describe('environment configuration', () => {
       JWT_ISSUER: 'convo-api-test',
       JWT_AUDIENCE: 'convo-client-test',
       CLIENT_ORIGINS: ['http://localhost:5173'],
+      ATTACHMENT_STORAGE_DRIVER: 's3',
+      LOCAL_STORAGE_DIRECTORY: './storage',
+      LOCAL_STORAGE_URL_TTL_SECONDS: 300,
       OBJECT_STORAGE_REGION: 'us-east-1',
       OBJECT_STORAGE_BUCKET: 'convo-test-attachments',
       OBJECT_STORAGE_FORCE_PATH_STYLE: true,
@@ -102,6 +105,26 @@ describe('environment configuration', () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('OBJECT_STORAGE_ACCESS_KEY_ID: is required');
+  });
+
+  it('does not require S3 configuration when local attachment storage is selected', () => {
+    const environment = createEnvironment({
+      ATTACHMENT_STORAGE_DRIVER: 'local',
+      LOCAL_STORAGE_DIRECTORY: '/tmp/convo-test-attachments',
+    });
+    delete environment.OBJECT_STORAGE_REGION;
+    delete environment.OBJECT_STORAGE_BUCKET;
+    delete environment.OBJECT_STORAGE_ACCESS_KEY_ID;
+    delete environment.OBJECT_STORAGE_SECRET_ACCESS_KEY;
+
+    const result = runEnvironmentImport(environment, true);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ATTACHMENT_STORAGE_DRIVER: 'local',
+      LOCAL_STORAGE_DIRECTORY: '/tmp/convo-test-attachments',
+      LOCAL_STORAGE_SIGNING_SECRET: environment.ACCESS_TOKEN_SECRET,
+    });
   });
 
   it('normalizes an optional S3-compatible endpoint and path-style setting', () => {
