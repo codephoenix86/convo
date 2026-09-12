@@ -80,7 +80,7 @@ const environmentSchema = z
     JWT_ISSUER: z.string().trim().min(1).max(100).default('convo-api'),
     JWT_AUDIENCE: z.string().trim().min(1).max(100).default('convo-client'),
     CLIENT_ORIGINS: clientOriginsSchema,
-    ATTACHMENT_STORAGE_DRIVER: z.enum(['s3', 'local']).default('s3'),
+    ATTACHMENT_STORAGE_DRIVER: z.enum(['s3', 'cloudinary', 'local']).default('s3'),
     LOCAL_STORAGE_DIRECTORY: z.string().trim().min(1, 'must not be empty').default('./storage'),
     LOCAL_STORAGE_SIGNING_SECRET: z.preprocess(
       (value) => (value === '' ? undefined : value),
@@ -100,21 +100,31 @@ const environmentSchema = z
       .default('false')
       .transform((value) => value === 'true'),
     OBJECT_STORAGE_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+    CLOUDINARY_CLOUD_NAME: optionalNonEmptyStringSchema,
+    CLOUDINARY_API_KEY: optionalNonEmptyStringSchema,
+    CLOUDINARY_API_SECRET: optionalNonEmptyStringSchema,
+    CLOUDINARY_DOWNLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
   })
   .superRefine((value, context) => {
-    if (value.ATTACHMENT_STORAGE_DRIVER !== 's3') {
-      return;
+    if (value.ATTACHMENT_STORAGE_DRIVER === 's3') {
+      requireFields(
+        value,
+        [
+          'OBJECT_STORAGE_REGION',
+          'OBJECT_STORAGE_BUCKET',
+          'OBJECT_STORAGE_ACCESS_KEY_ID',
+          'OBJECT_STORAGE_SECRET_ACCESS_KEY',
+        ],
+        context,
+      );
     }
 
-    for (const field of [
-      'OBJECT_STORAGE_REGION',
-      'OBJECT_STORAGE_BUCKET',
-      'OBJECT_STORAGE_ACCESS_KEY_ID',
-      'OBJECT_STORAGE_SECRET_ACCESS_KEY',
-    ]) {
-      if (!value[field]) {
-        context.addIssue({ code: 'custom', path: [field], message: 'is required' });
-      }
+    if (value.ATTACHMENT_STORAGE_DRIVER === 'cloudinary') {
+      requireFields(
+        value,
+        ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'],
+        context,
+      );
     }
   });
 
@@ -150,6 +160,14 @@ function parseEnvironment(values) {
   }
 
   return Object.freeze(configuration);
+}
+
+function requireFields(configuration, fields, context) {
+  for (const field of fields) {
+    if (!configuration[field]) {
+      context.addIssue({ code: 'custom', path: [field], message: 'is required' });
+    }
+  }
 }
 
 function isPostgresUrl(value) {

@@ -127,6 +127,43 @@ describe('environment configuration', () => {
     });
   });
 
+  it('requires only Cloudinary credentials when Cloudinary storage is selected', () => {
+    const environment = createEnvironment({
+      ATTACHMENT_STORAGE_DRIVER: 'cloudinary',
+      CLOUDINARY_CLOUD_NAME: 'convo-cloud',
+      CLOUDINARY_API_KEY: 'cloudinary-key',
+      CLOUDINARY_API_SECRET: 'cloudinary-secret',
+    });
+    delete environment.OBJECT_STORAGE_REGION;
+    delete environment.OBJECT_STORAGE_BUCKET;
+    delete environment.OBJECT_STORAGE_ACCESS_KEY_ID;
+    delete environment.OBJECT_STORAGE_SECRET_ACCESS_KEY;
+
+    const result = runEnvironmentImport(environment, true);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      ATTACHMENT_STORAGE_DRIVER: 'cloudinary',
+      CLOUDINARY_CLOUD_NAME: 'convo-cloud',
+      CLOUDINARY_API_KEY: 'cloudinary-key',
+      CLOUDINARY_API_SECRET: 'cloudinary-secret',
+      CLOUDINARY_DOWNLOAD_URL_TTL_SECONDS: 300,
+    });
+  });
+
+  it('fails fast when selected Cloudinary credentials are missing', () => {
+    const environment = createEnvironment({
+      ATTACHMENT_STORAGE_DRIVER: 'cloudinary',
+      CLOUDINARY_CLOUD_NAME: 'convo-cloud',
+      CLOUDINARY_API_KEY: 'cloudinary-key',
+    });
+
+    const result = runEnvironmentImport(environment);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('CLOUDINARY_API_SECRET: is required');
+  });
+
   it('normalizes an optional S3-compatible endpoint and path-style setting', () => {
     const environment = createEnvironment({
       OBJECT_STORAGE_ENDPOINT: 'https://account.r2.cloudflarestorage.com',

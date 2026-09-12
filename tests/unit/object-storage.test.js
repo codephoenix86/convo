@@ -42,7 +42,9 @@ describe('S3-compatible object storage', () => {
       },
     );
     expect(result).toEqual({
+      method: 'PUT',
       url: 'https://storage.example.com/signed-upload',
+      headers: { 'content-type': 'application/pdf' },
       expiresIn: 300,
     });
   });

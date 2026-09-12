@@ -42,9 +42,10 @@ export function createAttachmentsService({
 
       return {
         storageKey,
-        method: 'PUT',
+        method: signedUpload.method,
         url: signedUpload.url,
-        headers: { 'content-type': command.mimeType },
+        headers: signedUpload.headers,
+        ...(signedUpload.formFields ? { formFields: signedUpload.formFields } : {}),
         expiresAt: new Date(now().getTime() + signedUpload.expiresIn * 1000),
       };
     },

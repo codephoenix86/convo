@@ -34,7 +34,7 @@ PostgreSQL is the durable source of truth for users, refresh sessions, conversat
 
 Typing and presence are deliberately process-local and ephemeral in the single-instance implementation. They expire or are cleared on disconnect and are never persisted as chat history. Redis is not required for Milestone D; a Redis adapter and shared TTL-backed state belong to the optional multi-instance production milestone.
 
-Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, bytes travel directly between the client and a private S3-compatible bucket. With `local`, short-lived signed endpoints send bytes through the API to persistent disk. Both drivers expose the same sign-and-inspect contract, verify uploaded metadata before message creation, and store searchable attachment metadata in PostgreSQL.
+Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, bytes travel directly between the client and a private S3-compatible bucket. With `cloudinary`, the client uses a signed multipart upload and assets use authenticated delivery. With `local`, signed endpoints send bytes through the API to persistent disk. All drivers expose the same upload-contract, inspect, and download-contract interface; uploaded metadata is verified before message creation, while searchable attachment metadata remains provider-neutral in PostgreSQL.
 
 ## Module boundaries
 

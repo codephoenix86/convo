@@ -20,7 +20,9 @@ function createFixture() {
   };
   const storage = {
     createUploadUrl: vi.fn().mockResolvedValue({
+      method: 'PUT',
       url: 'https://storage.example.com/signed-upload',
+      headers: { 'content-type': 'application/pdf' },
       expiresIn: 300,
     }),
     createDownloadUrl: vi.fn().mockResolvedValue({
@@ -77,6 +79,31 @@ describe('attachments service', () => {
       url: 'https://storage.example.com/signed-upload',
       headers: { 'content-type': 'application/pdf' },
       expiresAt: new Date('2026-09-10T14:05:00.000Z'),
+    });
+  });
+
+  it('passes through a provider-specific multipart upload contract', async () => {
+    const fixture = createFixture();
+    fixture.storage.createUploadUrl.mockResolvedValue({
+      method: 'POST',
+      url: 'https://api.cloudinary.com/v1_1/convo/raw/upload',
+      headers: {},
+      formFields: { api_key: 'public-key', signature: 'signature' },
+      expiresIn: 3600,
+    });
+
+    const upload = await fixture.service.initializeUpload(userId, {
+      conversationId,
+      fileName: 'photo.png',
+      mimeType: 'image/png',
+      size: 1024,
+    });
+
+    expect(upload).toMatchObject({
+      method: 'POST',
+      headers: {},
+      formFields: { api_key: 'public-key', signature: 'signature' },
+      expiresAt: new Date('2026-09-10T15:00:00.000Z'),
     });
   });
 

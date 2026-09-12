@@ -20,7 +20,12 @@ export function createLocalObjectStorage({ directory, expiresIn, signingSecret, 
         now,
       );
 
-      return { url: `${LOCAL_STORAGE_ROUTE}/upload?token=${token}`, expiresIn };
+      return {
+        method: 'PUT',
+        url: `${LOCAL_STORAGE_ROUTE}/upload?token=${token}`,
+        headers: { 'content-type': mimeType },
+        expiresIn,
+      };
     },
 
     async inspectObject(storageKey) {

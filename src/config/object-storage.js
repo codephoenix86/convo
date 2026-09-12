@@ -6,8 +6,11 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import { createCloudinaryObjectStorage } from './cloudinary-object-storage.js';
 import { env } from './env.js';
 import { createLocalObjectStorage } from './local-object-storage.js';
+
+export { createCloudinaryObjectStorage } from './cloudinary-object-storage.js';
 
 export function createS3ObjectStorage({ client, bucket, expiresIn, sign = getSignedUrl }) {
   return {
@@ -26,7 +29,12 @@ export function createS3ObjectStorage({ client, bucket, expiresIn, sign = getSig
         signableHeaders: new Set(['content-type']),
       });
 
-      return { url, expiresIn };
+      return {
+        method: 'PUT',
+        url,
+        headers: { 'content-type': mimeType },
+        expiresIn,
+      };
     },
 
     async inspectObject(storageKey) {
@@ -76,6 +84,15 @@ export function createObjectStorage(configuration = env) {
       directory: configuration.LOCAL_STORAGE_DIRECTORY,
       expiresIn: configuration.LOCAL_STORAGE_URL_TTL_SECONDS,
       signingSecret: configuration.LOCAL_STORAGE_SIGNING_SECRET,
+    });
+  }
+
+  if (configuration.ATTACHMENT_STORAGE_DRIVER === 'cloudinary') {
+    return createCloudinaryObjectStorage({
+      cloudName: configuration.CLOUDINARY_CLOUD_NAME,
+      apiKey: configuration.CLOUDINARY_API_KEY,
+      apiSecret: configuration.CLOUDINARY_API_SECRET,
+      downloadExpiresIn: configuration.CLOUDINARY_DOWNLOAD_URL_TTL_SECONDS,
     });
   }
 

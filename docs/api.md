@@ -95,7 +95,9 @@ History is newest first. Pass `data.nextCursor` unchanged to the next request. C
    }
    ```
 
-2. Resolve `data.upload.url` against the API origin if it is relative, then `PUT` the exact bytes using every header in `data.upload.headers` before `expiresAt`.
+2. Resolve `data.upload.url` against the API origin if it is relative, then use the returned method and every returned header before `expiresAt`:
+   - When `formFields` is absent, send the exact file bytes as the request body.
+   - When `formFields` is present, create a `FormData`, append every returned field, append the file under `file`, and send that form without manually setting `Content-Type`.
 3. Send a normal message with the returned key:
 
    ```json
@@ -112,4 +114,4 @@ History is newest first. Pass `data.nextCursor` unchanged to the next request. C
    }
    ```
 
-The service verifies the stored object's signed owner, conversation, type, extension, and byte size before atomically creating message/attachment rows. Payloads contain a relative attachment `url`; fetch it with Bearer authentication to receive a private signed-download redirect. The redirect targets either S3-compatible storage or a signed local API endpoint, depending on `ATTACHMENT_STORAGE_DRIVER`.
+Cloudinary returns `method: "POST"`, empty headers, and signed `formFields`; S3/local return `method: "PUT"` and no `formFields`. The service verifies the stored object's signed owner, conversation, type, extension, and byte size before atomically creating message/attachment rows. Payloads contain a relative attachment `url`; fetch it with Bearer authentication to receive a private signed-download redirect for the selected `ATTACHMENT_STORAGE_DRIVER`.
