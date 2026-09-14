@@ -35,6 +35,7 @@ describe('REST message realtime publication', () => {
   let httpServer;
   let socketServer;
   let recipientClient;
+  let senderClient;
   let serverUrl;
   let messageRepository;
 
@@ -75,6 +76,7 @@ describe('REST message realtime publication', () => {
       accessTokenVerifier,
       membershipRepository: accessRepository,
       roomCoordinator,
+      messages,
       log,
     });
     messageEvents.attach(socketServer);
@@ -91,35 +93,51 @@ describe('REST message realtime publication', () => {
       transports: ['websocket'],
     });
     await once(recipientClient, 'connect');
+    senderClient = createClient(serverUrl, {
+      auth: { token: 'sender-token' },
+      extraHeaders: { origin: CLIENT_ORIGIN },
+      reconnection: false,
+      transports: ['websocket'],
+    });
+    await once(senderClient, 'connect');
   });
 
   afterEach(async () => {
     recipientClient.close();
+    senderClient.close();
     await new Promise((resolve) => socketServer.close(resolve));
   });
 
-  it('broadcasts a new canonical message once and does not rebroadcast its retry', async () => {
+  it('returns one canonical message across REST and socket retries without rebroadcasting', async () => {
     const receivedEvents = [];
     recipientClient.on('message:new', (event) => receivedEvents.push(event));
 
     const firstResponse = await sendMessage('  Canonical message  ');
+    const firstBody = await firstResponse.json();
 
     expect(firstResponse.status).toBe(201);
+    expect(firstBody.data.message).toEqual(serializeMessage(canonicalMessage));
     await waitFor(() => receivedEvents.length === 1);
-    expect(receivedEvents[0]).toEqual({
-      message: {
-        ...canonicalMessage,
-        createdAt: canonicalMessage.createdAt.toISOString(),
-        updatedAt: canonicalMessage.updatedAt.toISOString(),
-      },
+    expect(receivedEvents[0]).toEqual({ message: serializeMessage(canonicalMessage) });
+
+    const socketRetry = await senderClient.timeout(1000).emitWithAck('message:send', {
+      conversationId,
+      clientMessageId,
+      body: 'A socket retry cannot replace the canonical body',
+    });
+    expect(socketRetry).toEqual({
+      ok: true,
+      data: { message: serializeMessage(canonicalMessage), created: false },
     });
 
     const retryResponse = await sendMessage('A retry cannot replace the canonical body');
+    const retryBody = await retryResponse.json();
 
     expect(retryResponse.status).toBe(200);
+    expect(retryBody.data.message).toEqual(firstBody.data.message);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(receivedEvents).toHaveLength(1);
-    expect(messageRepository.create).toHaveBeenCalledTimes(2);
+    expect(messageRepository.create).toHaveBeenCalledTimes(3);
   });
 
   function sendMessage(body) {
@@ -133,6 +151,14 @@ describe('REST message realtime publication', () => {
     });
   }
 });
+
+function serializeMessage(message) {
+  return {
+    ...message,
+    createdAt: message.createdAt.toISOString(),
+    updatedAt: message.updatedAt.toISOString(),
+  };
+}
 
 function waitFor(predicate, timeoutMs = 2000) {
   return new Promise((resolve, reject) => {

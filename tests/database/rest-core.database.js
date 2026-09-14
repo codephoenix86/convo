@@ -260,6 +260,64 @@ describe('database-backed conversation rules', () => {
 });
 
 describe('database-backed message flow', () => {
+  it('collapses concurrent retries and scopes idempotency by sender and conversation', async () => {
+    await createFixtureUsers();
+    const app = createFixtureApp();
+    const firstConversation = await authenticatedRequest(app, 'alice-access')
+      .post('/conversations/direct')
+      .send({ userId: users.bob.id })
+      .expect(200);
+    const secondConversation = await authenticatedRequest(app, 'alice-access')
+      .post('/conversations/direct')
+      .send({ userId: users.charlie.id })
+      .expect(200);
+    const firstConversationId = firstConversation.body.data.conversation.id;
+    const secondConversationId = secondConversation.body.data.conversation.id;
+    const sharedClientMessageId = randomUUID();
+
+    const concurrentResponses = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        sendMessage(app, 'alice-access', firstConversationId, {
+          clientMessageId: sharedClientMessageId,
+          body: `Concurrent attempt ${index + 1}`,
+        }),
+      ),
+    );
+    const createdResponse = concurrentResponses.find((response) => response.status === 201);
+
+    expect(concurrentResponses.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(concurrentResponses.filter((response) => response.status === 200)).toHaveLength(7);
+    expect(createdResponse).toBeDefined();
+    expect(new Set(concurrentResponses.map((response) => response.body.data.message.id))).toEqual(
+      new Set([createdResponse.body.data.message.id]),
+    );
+    expect(new Set(concurrentResponses.map((response) => response.body.data.message.body))).toEqual(
+      new Set([createdResponse.body.data.message.body]),
+    );
+    expect(
+      await db.message.count({
+        where: {
+          conversationId: firstConversationId,
+          senderId: users.alice.id,
+          clientMessageId: sharedClientMessageId,
+        },
+      }),
+    ).toBe(1);
+
+    const otherSender = await sendMessage(app, 'bob-access', firstConversationId, {
+      clientMessageId: sharedClientMessageId,
+      body: 'Same client ID from another sender',
+    }).expect(201);
+    const otherConversation = await sendMessage(app, 'alice-access', secondConversationId, {
+      clientMessageId: sharedClientMessageId,
+      body: 'Same client ID in another conversation',
+    }).expect(201);
+
+    expect(otherSender.body.data.message.id).not.toBe(createdResponse.body.data.message.id);
+    expect(otherConversation.body.data.message.id).not.toBe(createdResponse.body.data.message.id);
+    expect(await db.message.count({ where: { clientMessageId: sharedClientMessageId } })).toBe(3);
+  });
+
   it('enforces membership and idempotency while paginating without duplicates or gaps', async () => {
     await createFixtureUsers();
     const app = createFixtureApp();
