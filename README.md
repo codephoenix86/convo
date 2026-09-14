@@ -2,7 +2,7 @@
 
 A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, and Prisma. Redis-backed horizontal scaling is planned after single-instance real-time correctness.
 
-Milestones A–D provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, and private local or S3-compatible attachments. Redis-backed multi-instance coordination remains an optional Milestone F concern.
+Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Redis-backed multi-instance coordination remains an optional Milestone F concern.
 
 ## Documentation
 
@@ -10,6 +10,7 @@ Milestones A–D provide the application foundation, authenticated REST and real
 - [Database model and delete behavior](docs/data-model.md)
 - [HTTP API contract and examples](docs/api.md)
 - [Socket.IO event contract](docs/socket-events.md)
+- [Quality, performance, and test evidence](docs/quality.md)
 - [Engineering decisions and trade-offs](docs/decisions.md)
 
 ## Requirements
@@ -64,6 +65,16 @@ Milestones A–D provide the application foundation, authenticated REST and real
 
 The `.env.example` credentials are local placeholders only. Do not reuse them in a deployed environment.
 
+## Demo
+
+With the migrated API running, open another terminal and run:
+
+```bash
+npm run demo
+```
+
+Set `DEMO_BASE_URL` to target another API origin, for example `DEMO_BASE_URL=http://127.0.0.1:4000 npm run demo`. Each run creates uniquely named Alice, Bob, and Charlie users, then demonstrates canonical direct-conversation reuse, a rejected group-role mutation, direct and group realtime sends/acknowledgements, a persisted read receipt, cross-transport message idempotency, reconnect room restoration, and REST recovery of a message missed while offline. Successful output ends with `Demo completed successfully.` The records are intentionally retained for inspection; use a disposable database when repeatable cleanup is important.
+
 ## HTTP endpoints
 
 | Method | Path                                 | Purpose                                                 |
@@ -94,6 +105,10 @@ The `.env.example` credentials are local placeholders only. Do not reuse them in
 | GET    | `/attachments/:id/content`           | Redirect an authorized member to a signed download.     |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
+
+### Rate limits
+
+Registration (5 per 15 minutes) and login (10 per 15 minutes) are limited by client IP. User search (60 per minute), message sends (120 per minute), and upload initialization (20 per minute) are limited by authenticated user. REST and Socket.IO message sends consume the same budget, so switching transports cannot bypass it. Limited HTTP responses return `429 RATE_LIMITED` with `RateLimit-*` and `Retry-After` headers; see [quality and performance evidence](docs/quality.md#rate-limit-policy) for the full policy and deployment notes.
 
 ## Attachment uploads
 
@@ -135,6 +150,7 @@ Socket events are live notifications, not a durable replay log. Whenever `sessio
 | --------------------------- | ------------------------------------------------------ |
 | `npm run dev`               | Start with Node's watch mode.                          |
 | `npm start`                 | Start the server normally.                             |
+| `npm run demo`              | Exercise the running API and realtime lifecycle.       |
 | `npm test`                  | Run unit, HTTP, and realtime tests once.               |
 | `npm run test:unit`         | Run unit tests.                                        |
 | `npm run test:integration`  | Run HTTP, configuration, and lifecycle contract tests. |
@@ -159,6 +175,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 | `NODE_ENV`                            | `development`, `test`, or `production`.                     |
 | `HOST`                                | HTTP bind address.                                          |
 | `PORT`                                | HTTP port from 1 through 65535.                             |
+| `TRUST_PROXY_HOPS`                    | Exact trusted reverse-proxy hop count; defaults to `0`.     |
 | `LOG_LEVEL`                           | Pino log threshold.                                         |
 | `DATABASE_URL`                        | PostgreSQL connection URL.                                  |
 | `TEST_DATABASE_URL`                   | Disposable PostgreSQL database used by tests.               |
@@ -196,6 +213,8 @@ The `OBJECT_STORAGE_*` region, bucket, and credential variables are required onl
 - Access JWTs are signed with HS256 and restricted to the configured issuer, audience, and lifetime.
 - Helmet applies standard HTTP security headers, and REST CORS grants browser access only to origins in `CLIENT_ORIGINS` without enabling credentialed cookies.
 - Refresh tokens rotate atomically; current/all-session logout revokes server-side refresh state.
+- Sensitive operations use bounded fixed-window limits keyed by client IP or authenticated user; message sends share one budget across REST and Socket.IO.
+- Rate-limit counters are process-local. `TRUST_PROXY_HOPS` must match the deployment's trusted proxy chain before IP-based limits rely on forwarded addresses.
 - Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
 - Read positions use canonical message timestamps and IDs, never move backward, and are returned with conversation members for resynchronization.
@@ -206,10 +225,10 @@ The `OBJECT_STORAGE_*` region, bucket, and credential variables are required onl
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.
 - REST and Socket.IO message mutations share sender-ownership rules, atomically update PostgreSQL, and redact soft-deleted bodies from responses and broadcasts.
-- Attachment upload initialization validates membership, MIME type, extension, and a 10 MiB size limit before issuing a user-scoped, short-lived local or S3-compatible upload URL.
+- Attachment upload initialization validates membership, MIME type, extension, and a 10 MiB size limit before issuing a user-scoped, short-lived local, S3-compatible, or Cloudinary upload URL.
 - Uploaded-object ownership and metadata are revalidated before attachment rows are atomically associated with a message; private downloads recheck membership and soft-delete state.
 - Message history is ordered by server timestamps plus IDs and uses conversation-bound cursors.
-- Database integration tests exercise real uniqueness, transactions, authorization, idempotency, and pagination.
+- Database integration tests exercise real uniqueness, transactions, authorization, idempotency, tied-timestamp pagination under a live insert, and critical PostgreSQL query plans.
 - Express and Socket.IO share one HTTP server; cross-origin socket handshakes use the configured allowlist.
 - Socket handshakes require a valid access token, and connection logs expose safe total/per-user counts without logging credentials.
 - Conversation room access is rebuilt from persisted memberships and updated after successful direct/group membership writes.

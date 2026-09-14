@@ -21,3 +21,9 @@ The client creates a `clientMessageId`, and PostgreSQL uniquely constrains it pe
 ## 5. Redis is deferred until multi-instance deployment
 
 Single-instance presence, typing TTLs, debounce state, and connection counts live in process memory. This makes expiration behavior explicit and keeps Milestone D runnable without another stateful dependency. The limitation is intentional: two API instances would disagree and their Socket.IO rooms would be isolated. Milestone F may add node-redis plus the Socket.IO Redis adapter, shared TTL/connection-count keys, reconnect handling, and a two-instance test. Redis will coordinate ephemeral state; it will not replace PostgreSQL as chat history.
+
+## 6. Rate limits match operation cost and identity
+
+Authentication attempts use client-IP budgets because no verified user exists yet; authenticated searches, sends, and upload initialization use the verified user ID so reconnecting or opening another tab does not reset a budget. Message sends deliberately share one limiter across REST and Socket.IO. This prevents transport switching from bypassing protection while keeping policy outside the message service.
+
+The implementation is a bounded, process-local fixed-window map, which is sufficient and easy to inspect for one instance. It is not presented as globally consistent: horizontal scaling requires shared counters, likely as part of Milestone F's Redis work. `TRUST_PROXY_HOPS` defaults to zero and must match the exact trusted proxy chain before forwarded client addresses are accepted for IP-keyed limits.

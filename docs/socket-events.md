@@ -8,7 +8,7 @@ Every client command should include an acknowledgement callback. Success uses `{
 
 | Event               | Payload                                                               | Success `data`         | Authorization and follow-up                                                                               |
 | ------------------- | --------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| `message:send`      | `{ conversationId, clientMessageId, body, replyToId?, attachments? }` | `{ message, created }` | Current member. Persists once; a new row broadcasts `message:new`.                                        |
+| `message:send`      | `{ conversationId, clientMessageId, body, replyToId?, attachments? }` | `{ message, created }` | Current member. Persists once; a new row broadcasts `message:new`; shares the REST per-user send limit.   |
 | `message:edit`      | `{ messageId, body }`                                                 | `{ message }`          | Current member and original sender. A changed row broadcasts `message:edited`.                            |
 | `message:delete`    | `{ messageId }`                                                       | `{ message }`          | Current member and original sender. Soft deletion broadcasts `message:deleted`; retry is not rebroadcast. |
 | `message:delivered` | `{ conversationId, messageId }`                                       | `{ receipt }`          | Current member. Monotonic advancement broadcasts `message:delivered`.                                     |
@@ -17,6 +17,8 @@ Every client command should include an acknowledgement callback. Success uses `{
 | `typing:stop`       | `{ conversationId }`                                                  | `{ typing }`           | Current member. Clears that socket's state and broadcasts `typing:stop` when no device remains typing.    |
 
 `attachments` contains up to four `{ storageKey, width?, height? }` references created by the signed-upload REST flow. Image dimensions must be paired. The server revalidates the uploaded object before persistence.
+
+`message:send` defaults to 120 attempts per minute for each authenticated user across all of that user's sockets and REST requests in this process. `typing:start` and `typing:stop` share a separate 12-events-per-two-seconds budget for each socket. A rejected command acknowledges `{ ok: false, error: { code: "RATE_LIMITED", message } }` and performs no domain-service work. These counters are process-local until the optional Redis scaling milestone.
 
 ## Server-to-client events
 

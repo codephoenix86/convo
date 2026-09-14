@@ -84,3 +84,5 @@ erDiagram
 - Attachment objects are external. Unattached/physically deleted object cleanup requires a bucket lifecycle policy or a later cleanup worker.
 
 The authoritative schema is [`prisma/schema.prisma`](../prisma/schema.prisma); committed migrations contain PostgreSQL-specific checks and indexes that Prisma schema syntax cannot express.
+
+The database suite verifies the history and idempotency indexes with executed PostgreSQL query plans; see [quality, performance, and test evidence](quality.md#pagination-and-index-evidence).

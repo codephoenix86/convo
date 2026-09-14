@@ -46,6 +46,20 @@ Every response has `x-request-id`. Expected application codes include `VALIDATIO
 
 Unknown/nonmember conversation resources intentionally return 404 where possible, limiting identifier probing.
 
+## Rate limits
+
+| Operation                        | Identity           | Default budget |
+| -------------------------------- | ------------------ | -------------- |
+| Registration                     | Client IP          | 5 per 15 min   |
+| Login                            | Client IP          | 10 per 15 min  |
+| User search                      | Authenticated user | 60 per min     |
+| REST/Socket.IO message sending   | Authenticated user | 120 per min    |
+| Attachment upload initialization | Authenticated user | 20 per min     |
+
+HTTP responses for limited routes include `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset`; rejected requests also include `Retry-After` and return `429 RATE_LIMITED`. The message budget is shared with Socket.IO `message:send` for the same user.
+
+IP-based limits use Express's resolved client address. `TRUST_PROXY_HOPS` defaults to `0`; set it only to the exact trusted reverse-proxy hop count in a deployment. Counters are process-local and require a shared store before horizontally scaling the API.
+
 ## Authentication example
 
 ```http
@@ -61,6 +75,21 @@ Content-Type: application/json
 
 Registration returns status 201 with `data.user` and `data.tokens.accessToken`/`refreshToken`. Send the access token as a Bearer token. Refresh tokens are opaque, stored only as hashes, and rotated by `/auth/refresh`.
 
+## Group authorization example
+
+```http
+POST /conversations/group
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "name": "Launch team",
+  "memberIds": ["a38d2b36-e56e-49bf-a602-920dfc72ec61"]
+}
+```
+
+The creator becomes the owner. Owners and admins can update group metadata and manage ordinary members; only the owner can promote/demote admins or remove an admin. An ordinary member receives `403 FORBIDDEN` for a known group mutation, while an outsider receives `404 NOT_FOUND`.
+
 ## Direct message example
 
 ```http
@@ -74,7 +103,7 @@ Content-Type: application/json
 }
 ```
 
-The first write returns 201. A retry with the same user, conversation, and `clientMessageId` returns status 200 and the original canonical message without creating or broadcasting a duplicate.
+The first write returns 201. A retry with the same user, conversation, and `clientMessageId` returns status 200 and the original canonical message without creating or broadcasting a duplicate, even when the first attempt used Socket.IO and the retry uses REST (or vice versa).
 
 History is newest first. Pass `data.nextCursor` unchanged to the next request. Cursors are opaque, conversation-bound, and encode the canonical timestamp/ID boundary.
 
