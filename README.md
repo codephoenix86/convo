@@ -65,6 +65,26 @@ Milestones A–E provide the application foundation, authenticated REST and real
 
 The `.env.example` credentials are local placeholders only. Do not reuse them in a deployed environment.
 
+### Docker Compose setup
+
+Start the API, PostgreSQL 18, and Redis with one command:
+
+```bash
+docker compose up --build --wait
+```
+
+Compose waits for PostgreSQL, applies every committed migration through a one-shot container, then starts the API. PostgreSQL and attachment data use named volumes; Redis holds only disposable local coordination state. The API is available at `http://localhost:3000` and both dependency ports bind to localhost only.
+
+Load the idempotent demo data after the stack is healthy:
+
+```bash
+docker compose --profile seed run --rm seed
+```
+
+Stop the stack while preserving its data with `docker compose down`. To deliberately reset all local PostgreSQL and attachment data, use `docker compose down --volumes`.
+
+Set `CONVO_API_PORT`, `CONVO_POSTGRES_PORT`, or `CONVO_REDIS_PORT` before the command when a default host port is already occupied. Set `CLIENT_ORIGINS` to change the browser-origin allowlist. The credentials embedded in the Compose file are development-only placeholders and must not be used for deployment.
+
 ## Demo
 
 With the migrated API running, open another terminal and run:

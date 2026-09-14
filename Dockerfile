@@ -6,7 +6,7 @@ RUN apt-get update \
   && apt-get install --yes --no-install-recommends ca-certificates openssl \
   && rm -rf /var/lib/apt/lists/*
 
-FROM base AS build
+FROM base AS dependencies
 
 WORKDIR /app
 
@@ -15,9 +15,19 @@ COPY .env.example prisma.config.js ./
 COPY prisma ./prisma
 COPY src/config/env.js ./src/config/env.js
 
-RUN npm ci \
-  && npm prune --omit=dev --ignore-scripts \
-  && npm cache clean --force
+RUN npm ci && npm cache clean --force
+
+FROM dependencies AS tooling
+
+COPY --chown=node:node src ./src
+
+USER node
+
+CMD ["npm", "run", "db:migrate:deploy"]
+
+FROM dependencies AS production-dependencies
+
+RUN npm prune --omit=dev --ignore-scripts
 
 FROM base AS runtime
 
@@ -25,8 +35,8 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/generated ./generated
+COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
+COPY --from=production-dependencies --chown=node:node /app/generated ./generated
 COPY --chown=node:node package.json ./
 COPY --chown=node:node src ./src
 
