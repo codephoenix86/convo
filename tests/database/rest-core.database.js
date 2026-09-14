@@ -260,6 +260,94 @@ describe('database-backed conversation rules', () => {
 });
 
 describe('database-backed message flow', () => {
+  it('paginates tied timestamps during live inserts and uses the critical message indexes', async () => {
+    await createFixtureUsers();
+    const app = createFixtureApp();
+    const direct = await authenticatedRequest(app, 'alice-access')
+      .post('/conversations/direct')
+      .send({ userId: users.bob.id })
+      .expect(200);
+    const conversationId = direct.body.data.conversation.id;
+    const tiedTimestamp = new Date('2026-09-12T12:00:00.000Z');
+    const seededMessages = Array.from({ length: 1_200 }, (_, index) => ({
+      id: createOrderedUuid('10000000', index + 1),
+      conversationId,
+      senderId: users.alice.id,
+      clientMessageId: createOrderedUuid('20000000', index + 1),
+      body: `History message ${index + 1}`,
+      createdAt: tiedTimestamp,
+      updatedAt: tiedTimestamp,
+    }));
+
+    await db.message.createMany({ data: seededMessages });
+    await db.$executeRaw`ANALYZE "messages"`;
+
+    const firstPage = await authenticatedRequest(app, 'bob-access')
+      .get(`/conversations/${conversationId}/messages`)
+      .query({ limit: 50 })
+      .expect(200);
+
+    await db.message.create({
+      data: {
+        conversationId,
+        senderId: users.alice.id,
+        clientMessageId: randomUUID(),
+        body: 'Inserted after the first page',
+        createdAt: new Date(tiedTimestamp.getTime() + 1_000),
+      },
+    });
+
+    const paginatedIds = firstPage.body.data.items.map((message) => message.id);
+    let nextCursor = firstPage.body.data.nextCursor;
+    let pageCount = 1;
+
+    while (nextCursor) {
+      const page = await authenticatedRequest(app, 'bob-access')
+        .get(`/conversations/${conversationId}/messages`)
+        .query({ cursor: nextCursor, limit: 50 })
+        .expect(200);
+
+      expect(page.body.data.items.length).toBeLessThanOrEqual(50);
+      paginatedIds.push(...page.body.data.items.map((message) => message.id));
+      nextCursor = page.body.data.nextCursor;
+      pageCount += 1;
+      expect(pageCount).toBeLessThanOrEqual(24);
+    }
+
+    const expectedIds = seededMessages.map((message) => message.id).reverse();
+
+    expect(paginatedIds).toEqual(expectedIds);
+    expect(new Set(paginatedIds).size).toBe(seededMessages.length);
+
+    const cursorMessage = seededMessages[600];
+    const historyPlan = await db.$queryRaw`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT "id"
+      FROM "messages"
+      WHERE "conversation_id" = ${conversationId}::uuid
+        AND (
+          "created_at" < ${tiedTimestamp}
+          OR ("created_at" = ${tiedTimestamp} AND "id" < ${cursorMessage.id}::uuid)
+        )
+      ORDER BY "created_at" DESC, "id" DESC
+      LIMIT 51
+    `;
+    const idempotencyPlan = await db.$queryRaw`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+      SELECT "id"
+      FROM "messages"
+      WHERE "sender_id" = ${users.alice.id}::uuid
+        AND "conversation_id" = ${conversationId}::uuid
+        AND "client_message_id" = ${cursorMessage.clientMessageId}::uuid
+      LIMIT 1
+    `;
+
+    expect(collectPlanIndexNames(historyPlan)).toContain('messages_history_idx');
+    expect(collectPlanIndexNames(idempotencyPlan)).toContain(
+      'messages_sender_conversation_client_id_key',
+    );
+  });
+
   it('collapses concurrent retries and scopes idempotency by sender and conversation', async () => {
     await createFixtureUsers();
     const app = createFixtureApp();
@@ -612,6 +700,34 @@ function sendMessage(app, token, conversationId, body) {
 
 function findConversation(response, conversationId) {
   return response.body.data.items.find((conversation) => conversation.id === conversationId);
+}
+
+function createOrderedUuid(prefix, sequence) {
+  return `${prefix}-0000-4000-8000-${sequence.toString(16).padStart(12, '0')}`;
+}
+
+function collectPlanIndexNames(plan) {
+  const names = new Set();
+  const pending = [plan];
+
+  while (pending.length > 0) {
+    const value = pending.pop();
+
+    if (Array.isArray(value)) {
+      pending.push(...value);
+      continue;
+    }
+
+    if (value && typeof value === 'object') {
+      if (typeof value['Index Name'] === 'string') {
+        names.add(value['Index Name']);
+      }
+
+      pending.push(...Object.values(value));
+    }
+  }
+
+  return [...names];
 }
 
 async function createFixtureUsers() {
