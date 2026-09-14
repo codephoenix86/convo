@@ -2,7 +2,9 @@ import { Router } from 'express';
 import express from 'express';
 
 import { objectStorage } from '../../config/object-storage.js';
+import { getUserRateLimitKey } from '../../lib/rate-limiter.js';
 import { createAccessTokenAuthenticator } from '../../middleware/authenticate.js';
+import { createRateLimitMiddleware } from '../../middleware/rate-limit.js';
 import { validateBody, validateParams } from '../../middleware/validate.js';
 import { createAttachmentsController } from './attachments.controller.js';
 import {
@@ -14,10 +16,16 @@ import {
 export function createAttachmentsRouter({
   attachments,
   accessTokenVerifier,
+  rateLimiters,
   storage = objectStorage,
 }) {
   const router = Router();
   const controller = createAttachmentsController(attachments, storage);
+  const limitUploadInitialization = createRateLimitMiddleware({
+    limiter: rateLimiters.uploadInit,
+    key: (request) => getUserRateLimitKey(request.user.id),
+    message: 'Upload initialization attempts are too frequent',
+  });
 
   if (storage.driver === 'local') {
     router.put(
@@ -31,6 +39,7 @@ export function createAttachmentsRouter({
   router.post(
     '/upload-init',
     createAccessTokenAuthenticator(accessTokenVerifier),
+    limitUploadInitialization,
     validateBody(initializeUploadBodySchema),
     controller.initializeUpload,
   );

@@ -57,14 +57,16 @@ describe('HTTP security policy', () => {
     expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
   });
 
-  it('allows configured browser origins and exposes the request ID', async () => {
+  it('allows configured browser origins and exposes request tracing and rate-limit headers', async () => {
     const response = await request(createApp({ database, allowedOrigins: [allowedOrigin] }))
       .get('/health')
       .set('origin', allowedOrigin)
       .expect(200);
 
     expect(response.headers['access-control-allow-origin']).toBe(allowedOrigin);
-    expect(response.headers['access-control-expose-headers']).toBe('X-Request-Id');
+    expect(response.headers['access-control-expose-headers']).toBe(
+      'X-Request-Id,RateLimit-Limit,RateLimit-Remaining,RateLimit-Reset,Retry-After',
+    );
     expect(response.headers['access-control-allow-credentials']).toBeUndefined();
     expect(response.headers.vary).toContain('Origin');
   });

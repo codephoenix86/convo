@@ -63,6 +63,7 @@ const environmentSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     HOST: z.string().trim().min(1, 'must not be empty').default('0.0.0.0'),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),

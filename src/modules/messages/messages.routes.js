@@ -1,6 +1,8 @@
 import { Router } from 'express';
 
+import { getUserRateLimitKey } from '../../lib/rate-limiter.js';
 import { createAccessTokenAuthenticator } from '../../middleware/authenticate.js';
+import { createRateLimitMiddleware } from '../../middleware/rate-limit.js';
 import { validateBody, validateParams, validateQuery } from '../../middleware/validate.js';
 import { createMessagesController } from './messages.controller.js';
 import {
@@ -12,14 +14,20 @@ import {
   messageHistoryQuerySchema,
 } from './messages.validation.js';
 
-export function createMessagesRouter({ messages, accessTokenVerifier }) {
+export function createMessagesRouter({ messages, accessTokenVerifier, rateLimiters }) {
   const router = Router();
   const controller = createMessagesController(messages);
   const authenticate = createAccessTokenAuthenticator(accessTokenVerifier);
+  const limitMessageSend = createRateLimitMiddleware({
+    limiter: rateLimiters.messageSend,
+    key: (request) => getUserRateLimitKey(request.user.id),
+    message: 'Message sends are too frequent',
+  });
 
   router.post(
     '/:id/messages',
     authenticate,
+    limitMessageSend,
     validateParams(conversationMessagesParamsSchema),
     validateBody(createMessageBodySchema),
     controller.create,

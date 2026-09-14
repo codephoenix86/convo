@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { db } from './config/db.js';
 import { env } from './config/env.js';
 import { objectStorage } from './config/object-storage.js';
+import { createApplicationRateLimiters } from './config/rate-limits.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
@@ -27,7 +28,13 @@ import { usersService } from './modules/users/users.service.js';
 const JSON_BODY_LIMIT = '100kb';
 const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const CORS_ALLOWED_HEADERS = ['Authorization', 'Content-Type', 'X-Request-Id'];
-const CORS_EXPOSED_HEADERS = ['X-Request-Id'];
+const CORS_EXPOSED_HEADERS = [
+  'X-Request-Id',
+  'RateLimit-Limit',
+  'RateLimit-Remaining',
+  'RateLimit-Reset',
+  'Retry-After',
+];
 
 export function createApp({
   database = db,
@@ -39,6 +46,8 @@ export function createApp({
   attachmentStorage = objectStorage,
   accessTokenVerifier = verifyAccessToken,
   allowedOrigins = env.CLIENT_ORIGINS,
+  trustProxyHops = env.TRUST_PROXY_HOPS,
+  rateLimiters = createApplicationRateLimiters(),
   registerRoutes,
   requestLogging = requestLogger,
 } = {}) {
@@ -46,6 +55,7 @@ export function createApp({
 
   app.disable('x-powered-by');
   app.set('json escape', true);
+  app.set('trust proxy', trustProxyHops);
   app.use(requestLogging);
   app.use(helmet());
   app.use(
@@ -61,14 +71,19 @@ export function createApp({
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
 
   app.use(createHealthRouter({ database }));
-  app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier }));
-  app.use('/users', createUsersRouter({ users, accessTokenVerifier }));
+  app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier, rateLimiters }));
+  app.use('/users', createUsersRouter({ users, accessTokenVerifier, rateLimiters }));
   app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));
-  app.use('/conversations', createMessagesRouter({ messages, accessTokenVerifier }));
+  app.use('/conversations', createMessagesRouter({ messages, accessTokenVerifier, rateLimiters }));
   app.use('/messages', createMessageMutationsRouter({ messages, accessTokenVerifier }));
   app.use(
     '/attachments',
-    createAttachmentsRouter({ attachments, accessTokenVerifier, storage: attachmentStorage }),
+    createAttachmentsRouter({
+      attachments,
+      accessTokenVerifier,
+      rateLimiters,
+      storage: attachmentStorage,
+    }),
   );
 
   if (registerRoutes) {

@@ -41,6 +41,7 @@ describe('environment configuration', () => {
       NODE_ENV: 'test',
       HOST: '127.0.0.1',
       PORT: 4321,
+      TRUST_PROXY_HOPS: 0,
       LOG_LEVEL: 'silent',
       DATABASE_CONNECTION_TIMEOUT_MS: 500,
       ACCESS_TOKEN_TTL_SECONDS: 900,
@@ -83,6 +84,16 @@ describe('environment configuration', () => {
 
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout).CLIENT_ORIGINS).toEqual(['http://localhost:5173']);
+  });
+
+  it('validates the trusted reverse-proxy hop count', () => {
+    const valid = runEnvironmentImport(createEnvironment({ TRUST_PROXY_HOPS: '1' }), true);
+    const invalid = runEnvironmentImport(createEnvironment({ TRUST_PROXY_HOPS: '-1' }));
+
+    expect(valid.status).toBe(0);
+    expect(JSON.parse(valid.stdout).TRUST_PROXY_HOPS).toBe(1);
+    expect(invalid.status).not.toBe(0);
+    expect(invalid.stderr).toContain('TRUST_PROXY_HOPS');
   });
 
   it('rejects invalid client origins', () => {

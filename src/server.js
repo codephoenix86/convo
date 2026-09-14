@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { db } from './config/db.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
+import { createApplicationRateLimiters } from './config/rate-limits.js';
 import { conversationsRepository } from './modules/conversations/conversations.repository.js';
 import { createConversationsService } from './modules/conversations/conversations.service.js';
 import { messagesRepository } from './modules/messages/messages.repository.js';
@@ -18,14 +19,19 @@ const conversations = createConversationsService(conversationsRepository, {
   membershipEvents: conversationRooms,
 });
 const messageEvents = createRealtimeMessageEvents();
+const rateLimiters = createApplicationRateLimiters();
 const messages = createMessagesService({
   repository: messagesRepository,
   accessRepository: conversationsRepository,
   messageEvents,
 });
-const app = createApp({ conversations, messages });
+const app = createApp({ conversations, messages, rateLimiters });
 const server = createServer(app);
-const io = createSocketServer(server, { roomCoordinator: conversationRooms, messages });
+const io = createSocketServer(server, {
+  roomCoordinator: conversationRooms,
+  messageSendRateLimiter: rateLimiters.messageSend,
+  messages,
+});
 messageEvents.attach(io);
 
 let shutdownPromise;

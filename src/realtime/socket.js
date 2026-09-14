@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { createApplicationRateLimiters } from '../config/rate-limits.js';
 import { verifyAccessToken } from '../modules/auth/tokens.js';
 import { conversationsRepository } from '../modules/conversations/conversations.repository.js';
 import { messagesService } from '../modules/messages/messages.service.js';
@@ -22,6 +23,7 @@ export function createSocketServer(
     presenceCoordinator = createPresenceCoordinator(),
     typingCoordinator = createTypingCoordinator(),
     typingRateLimit,
+    messageSendRateLimiter = createApplicationRateLimiters().messageSend,
     messages = messagesService,
     log = logger,
   } = {},
@@ -48,7 +50,7 @@ export function createSocketServer(
   io.on('connection', (socket) => {
     const ready = roomCoordinator.connectSocket(socket);
 
-    registerMessageHandlers(socket, { messages, ready, log });
+    registerMessageHandlers(socket, { messages, ready, messageSendRateLimiter, log });
     registerTypingHandlers(socket, {
       ready,
       accessRepository: membershipRepository,

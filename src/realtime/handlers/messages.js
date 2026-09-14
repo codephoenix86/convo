@@ -1,3 +1,5 @@
+import { RateLimitError } from '../../lib/errors.js';
+import { getUserRateLimitKey } from '../../lib/rate-limiter.js';
 import { registerAcknowledgedEvent } from './acknowledged-event.js';
 
 const MESSAGE_SEND_EVENT = 'message:send';
@@ -6,12 +8,18 @@ const CONVERSATION_READ_EVENT = 'conversation:read';
 const MESSAGE_EDIT_EVENT = 'message:edit';
 const MESSAGE_DELETE_EVENT = 'message:delete';
 
-export function registerMessageHandlers(socket, { messages, ready, log }) {
+export function registerMessageHandlers(socket, { messages, ready, messageSendRateLimiter, log }) {
   registerAcknowledgedEvent(socket, {
     eventName: MESSAGE_SEND_EVENT,
     ready,
     log,
     handle: async (payload) => {
+      const rateLimit = messageSendRateLimiter.consume(getUserRateLimitKey(socket.data.user.id));
+
+      if (!rateLimit.allowed) {
+        throw new RateLimitError('Message sends are too frequent');
+      }
+
       const result = await messages.send(socket.data.user.id, payload);
 
       return { message: result.message, created: result.created };
