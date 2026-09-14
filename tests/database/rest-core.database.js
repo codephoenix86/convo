@@ -26,11 +26,17 @@ const users = Object.freeze({
     email: 'charlie.database@example.com',
     username: 'charlie_database',
   },
+  diana: {
+    id: randomUUID(),
+    email: 'diana.database@example.com',
+    username: 'diana_database',
+  },
 });
 const accessTokens = new Map([
   ['alice-access', users.alice.id],
   ['bob-access', users.bob.id],
   ['charlie-access', users.charlie.id],
+  ['diana-access', users.diana.id],
 ]);
 
 let fixturePasswordHash;
@@ -147,6 +153,110 @@ describe('database-backed conversation rules', () => {
       ]),
     );
   });
+
+  it('enforces owner, admin, member, and outsider group boundaries', async () => {
+    await createFixtureUsers();
+    const app = createFixtureApp();
+    const groupResponse = await authenticatedRequest(app, 'alice-access')
+      .post('/conversations/group')
+      .send({
+        name: 'Authorization Team',
+        memberIds: [users.bob.id, users.charlie.id],
+      })
+      .expect(201);
+    const groupId = groupResponse.body.data.conversation.id;
+
+    await authenticatedRequest(app, 'alice-access')
+      .patch(`/conversations/${groupId}/members/${users.bob.id}`)
+      .send({ role: 'ADMIN' })
+      .expect(200);
+
+    await authenticatedRequest(app, 'charlie-access')
+      .patch(`/conversations/${groupId}`)
+      .send({ name: 'Member rename' })
+      .expect(403);
+    await authenticatedRequest(app, 'charlie-access')
+      .post(`/conversations/${groupId}/members`)
+      .send({ userId: users.diana.id })
+      .expect(403);
+    await authenticatedRequest(app, 'charlie-access')
+      .delete(`/conversations/${groupId}/members/${users.bob.id}`)
+      .expect(403);
+    await authenticatedRequest(app, 'charlie-access')
+      .patch(`/conversations/${groupId}/members/${users.bob.id}`)
+      .send({ role: 'MEMBER' })
+      .expect(403);
+
+    await authenticatedRequest(app, 'bob-access')
+      .patch(`/conversations/${groupId}`)
+      .send({ name: 'Admin rename' })
+      .expect(200);
+    await authenticatedRequest(app, 'bob-access')
+      .post(`/conversations/${groupId}/members`)
+      .send({ userId: users.diana.id, role: 'ADMIN' })
+      .expect(403);
+    await authenticatedRequest(app, 'bob-access')
+      .post(`/conversations/${groupId}/members`)
+      .send({ userId: users.diana.id })
+      .expect(201);
+    await authenticatedRequest(app, 'bob-access')
+      .delete(`/conversations/${groupId}/members/${users.alice.id}`)
+      .expect(403);
+    await authenticatedRequest(app, 'bob-access')
+      .patch(`/conversations/${groupId}/members/${users.charlie.id}`)
+      .send({ role: 'ADMIN' })
+      .expect(403);
+    await authenticatedRequest(app, 'bob-access')
+      .delete(`/conversations/${groupId}/members/${users.diana.id}`)
+      .expect(204);
+
+    await authenticatedRequest(app, 'alice-access')
+      .delete(`/conversations/${groupId}/members/${users.alice.id}`)
+      .expect(403);
+    await authenticatedRequest(app, 'alice-access')
+      .patch(`/conversations/${groupId}/members/${users.charlie.id}`)
+      .send({ role: 'ADMIN' })
+      .expect(200);
+
+    await authenticatedRequest(app, 'diana-access')
+      .patch(`/conversations/${groupId}`)
+      .send({ name: 'Outsider rename' })
+      .expect(404);
+    await authenticatedRequest(app, 'diana-access')
+      .post(`/conversations/${groupId}/members`)
+      .send({ userId: users.diana.id })
+      .expect(404);
+    await authenticatedRequest(app, 'diana-access')
+      .delete(`/conversations/${groupId}/members/${users.charlie.id}`)
+      .expect(404);
+    await authenticatedRequest(app, 'diana-access')
+      .patch(`/conversations/${groupId}/members/${users.charlie.id}`)
+      .send({ role: 'MEMBER' })
+      .expect(404);
+
+    const directResponse = await authenticatedRequest(app, 'alice-access')
+      .post('/conversations/direct')
+      .send({ userId: users.bob.id })
+      .expect(200);
+
+    await authenticatedRequest(app, 'alice-access')
+      .patch(`/conversations/${directResponse.body.data.conversation.id}`)
+      .send({ name: 'Direct rename' })
+      .expect(404);
+
+    const storedMembers = await db.conversationMember.findMany({
+      where: { conversationId: groupId },
+      orderBy: { userId: 'asc' },
+      select: { userId: true, role: true },
+    });
+    expect(storedMembers).toEqual(
+      [
+        { userId: users.alice.id, role: 'OWNER' },
+        { userId: users.bob.id, role: 'ADMIN' },
+        { userId: users.charlie.id, role: 'ADMIN' },
+      ].sort((left, right) => left.userId.localeCompare(right.userId)),
+    );
+  });
 });
 
 describe('database-backed message flow', () => {
@@ -255,6 +365,12 @@ describe('database-backed message flow', () => {
     await authenticatedRequest(app, 'charlie-access')
       .patch(`/messages/${fourthMessageId}`)
       .send({ body: 'A nonmember cannot discover this message' })
+      .expect(404);
+    await authenticatedRequest(app, 'bob-access')
+      .delete(`/messages/${fourthMessageId}`)
+      .expect(403);
+    await authenticatedRequest(app, 'charlie-access')
+      .delete(`/messages/${fourthMessageId}`)
       .expect(404);
 
     const edited = await authenticatedRequest(app, 'alice-access')
@@ -378,9 +494,18 @@ describe('database-backed attachment flow', () => {
     await authenticatedRequest(app, 'bob-access')
       .get(`/attachments/${attachment.id}/content`)
       .expect(307)
-      .expect('location', /X-Amz-Signature=/u);
+      .expect('location', /^https:\/\//u);
     await authenticatedRequest(app, 'charlie-access')
       .get(`/attachments/${attachment.id}/content`)
+      .expect(404);
+    await authenticatedRequest(app, 'charlie-access')
+      .post('/attachments/upload-init')
+      .send({
+        conversationId,
+        fileName: 'unauthorized.png',
+        mimeType: 'image/png',
+        size: 2048,
+      })
       .expect(404);
 
     const deleted = await authenticatedRequest(app, 'alice-access')

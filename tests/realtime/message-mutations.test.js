@@ -137,27 +137,41 @@ describe('message edit and delete socket events', () => {
     });
   });
 
-  it('rejects mutation by another member or a nonmember', async () => {
-    const recipient = await connectClient('recipient-token');
-    const memberResult = await recipient.timeout(1000).emitWithAck('message:delete', {
-      messageId,
-    });
-
-    expect(memberResult).toEqual({
-      ok: false,
+  it.each([
+    {
+      actor: 'another member',
+      token: 'recipient-token',
+      eventName: 'message:edit',
+      payload: { messageId, body: 'Unauthorized edit' },
       error: { code: 'FORBIDDEN', message: 'Only the message sender can modify it' },
-    });
-
-    const outsider = await connectClient('outsider-token');
-    const outsiderResult = await outsider.timeout(1000).emitWithAck('message:edit', {
-      messageId,
-      body: 'Unauthorized edit',
-    });
-
-    expect(outsiderResult).toEqual({
-      ok: false,
+    },
+    {
+      actor: 'another member',
+      token: 'recipient-token',
+      eventName: 'message:delete',
+      payload: { messageId },
+      error: { code: 'FORBIDDEN', message: 'Only the message sender can modify it' },
+    },
+    {
+      actor: 'a nonmember',
+      token: 'outsider-token',
+      eventName: 'message:edit',
+      payload: { messageId, body: 'Unauthorized edit' },
       error: { code: 'NOT_FOUND', message: 'Message not found' },
-    });
+    },
+    {
+      actor: 'a nonmember',
+      token: 'outsider-token',
+      eventName: 'message:delete',
+      payload: { messageId },
+      error: { code: 'NOT_FOUND', message: 'Message not found' },
+    },
+  ])('rejects $eventName from $actor', async ({ token, eventName, payload, error }) => {
+    const client = await connectClient(token);
+
+    const acknowledgement = await client.timeout(1000).emitWithAck(eventName, payload);
+
+    expect(acknowledgement).toEqual({ ok: false, error });
     expect(repository.edit).not.toHaveBeenCalled();
     expect(repository.softDelete).not.toHaveBeenCalled();
   });
