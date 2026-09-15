@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.19.0
+
+jobs:
+  verify:
+    name: Quality and database
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+        env:
+          POSTGRES_DB: convo_test
+          POSTGRES_USER: convo
+          POSTGRES_PASSWORD: convo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username=convo --dbname=convo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8.2.9-bookworm@sha256:7d1e4ce8b9395088377ab382d1f6cfdbd13b3690795198a0399ab8d683064d6d
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: '3000'
+      LOG_LEVEL: silent
+      DATABASE_URL: postgresql://convo:convo@127.0.0.1:5432/convo?schema=public
+      TEST_DATABASE_URL: postgresql://convo:convo@127.0.0.1:5432/convo_test?schema=public
+      DATABASE_CONNECTION_TIMEOUT_MS: '5000'
+      ACCESS_TOKEN_SECRET: ci-access-token-secret-at-least-32-characters
+      ACCESS_TOKEN_TTL_SECONDS: '900'
+      REFRESH_TOKEN_TTL_DAYS: '30'
+      JWT_ISSUER: convo-api-ci
+      JWT_AUDIENCE: convo-client-ci
+      CLIENT_ORIGINS: http://localhost:5173
+      ATTACHMENT_STORAGE_DRIVER: s3
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_BUCKET: convo-ci-attachments
+      OBJECT_STORAGE_ACCESS_KEY_ID: ci-object-storage-access-key
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ci-object-storage-secret-key
+      OBJECT_STORAGE_FORCE_PATH_STYLE: 'false'
+      OBJECT_STORAGE_PRESIGN_TTL_SECONDS: '300'
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Validate Prisma schema
+        run: npm run db:validate
+
+      - name: Run unit, integration, and realtime tests
+        run: npm test
+
+      - name: Run migrations and database tests
+        run: npm run test:database
+
+  container:
+    name: Production container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verify
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Check Dockerfile
+        run: docker buildx build --check .
+
+      - name: Build production image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: Dockerfile
+          target: runtime
+          load: true
+          push: false
+          tags: convo-chat-backend:ci
+          cache-from: type=gha,scope=production-image
+          cache-to: type=gha,mode=max,scope=production-image
+          provenance: false
+
+      - name: Verify production runtime
+        run: >-
+          docker run --rm --entrypoint node convo-chat-backend:ci --input-type=module --eval
+          "import argon2 from 'argon2'; import { existsSync } from 'node:fs';
+          if (process.getuid() === 0 || existsSync('/app/node_modules/vitest')) process.exit(1);
+          console.log(process.version);"

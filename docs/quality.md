@@ -16,6 +16,14 @@ Milestone E turns the backend's security and correctness claims into executable 
 
 Database tests require `TEST_DATABASE_URL` to identify a disposable database whose name ends in `_test`. The runner rejects the normal `DATABASE_URL`, deploys committed migrations, and clears only the isolated test database between cases.
 
+## Continuous integration
+
+GitHub Actions runs the complete release gate on pull requests, pushes to `main`, and manual dispatches. The quality job installs exactly `package-lock.json`, checks formatting and lint, validates the Prisma schema, runs the default test suite, then deploys all migrations into an isolated PostgreSQL 18 service before running database-backed constraints, transactions, authorization, pagination, and query-plan tests. A Redis service is already available to the job for the horizontal-scaling milestone.
+
+The container job runs only after application and database checks pass. It validates the Compose model and Dockerfile, builds the production target, and verifies that the image runs as a non-root user, loads the native Argon2 dependency, and excludes Vitest. BuildKit caches image layers, while `setup-node` caches npm's download cache by lockfile; neither job caches `node_modules` or build output.
+
+Workflow permissions are read-only, checkout credentials are not persisted, third-party actions are pinned to immutable commit SHAs, concurrent runs for the same ref are cancelled, and every job has a bounded timeout. A CI badge should be added to the README only after this workflow has completed successfully on GitHub.
+
 ## Authorization coverage
 
 - A table-driven integration test covers all 19 protected REST routes. Requests without a Bearer token return `401 UNAUTHORIZED` before token verification or domain-service work.
