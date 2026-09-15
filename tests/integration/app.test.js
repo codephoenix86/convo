@@ -9,10 +9,11 @@ afterAll(async () => {
 });
 
 describe('system endpoints', () => {
-  it('reports liveness without querying the database', async () => {
+  it('reports liveness without querying dependencies', async () => {
     const database = { $queryRaw: vi.fn() };
+    const redisClient = { ping: vi.fn() };
 
-    const response = await request(createApp({ database }))
+    const response = await request(createApp({ database, redisClient }))
       .get('/health')
       .set('x-request-id', 'test-health-request')
       .expect(200);
@@ -21,15 +22,21 @@ describe('system endpoints', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.headers['x-request-id']).toBe('test-health-request');
     expect(database.$queryRaw).not.toHaveBeenCalled();
+    expect(redisClient.ping).not.toHaveBeenCalled();
   });
 
-  it('reports readiness when PostgreSQL responds', async () => {
+  it('reports readiness when PostgreSQL and Redis respond', async () => {
     const database = { $queryRaw: vi.fn().mockResolvedValue([{ value: 1 }]) };
+    const redisClient = createReadyRedisClient();
 
-    const response = await request(createApp({ database })).get('/ready').expect(200);
+    const response = await request(createApp({ database, redisClient })).get('/ready').expect(200);
 
-    expect(response.body).toEqual({ status: 'ready', checks: { database: 'up' } });
+    expect(response.body).toEqual({
+      status: 'ready',
+      checks: { database: 'up', redis: 'up' },
+    });
     expect(database.$queryRaw).toHaveBeenCalledOnce();
+    expect(redisClient.ping).toHaveBeenCalledOnce();
   });
 
   it('reports unavailable readiness without leaking the database error', async () => {
@@ -37,12 +44,48 @@ describe('system endpoints', () => {
       $queryRaw: vi.fn().mockRejectedValue(new Error('sensitive database failure')),
     };
 
-    const response = await request(createApp({ database })).get('/ready').expect(503);
+    const response = await request(createApp({ database, redisClient: createReadyRedisClient() }))
+      .get('/ready')
+      .expect(503);
 
-    expect(response.body).toEqual({ status: 'not_ready', checks: { database: 'down' } });
+    expect(response.body).toEqual({
+      status: 'not_ready',
+      checks: { database: 'down', redis: 'up' },
+    });
     expect(response.text).not.toContain('sensitive database failure');
   });
+
+  it('reports unavailable readiness when Redis is disconnected without issuing a command', async () => {
+    const database = { $queryRaw: vi.fn().mockResolvedValue([{ value: 1 }]) };
+    const redisClient = { isReady: false, ping: vi.fn() };
+
+    const response = await request(createApp({ database, redisClient })).get('/ready').expect(503);
+
+    expect(response.body).toEqual({
+      status: 'not_ready',
+      checks: { database: 'up', redis: 'down' },
+    });
+    expect(redisClient.ping).not.toHaveBeenCalled();
+  });
+
+  it('does not leak Redis readiness errors', async () => {
+    const database = { $queryRaw: vi.fn().mockResolvedValue([{ value: 1 }]) };
+    const redisClient = createReadyRedisClient();
+    redisClient.ping.mockRejectedValue(new Error('sensitive Redis failure'));
+
+    const response = await request(createApp({ database, redisClient })).get('/ready').expect(503);
+
+    expect(response.body).toEqual({
+      status: 'not_ready',
+      checks: { database: 'up', redis: 'down' },
+    });
+    expect(response.text).not.toContain('sensitive Redis failure');
+  });
 });
+
+function createReadyRedisClient() {
+  return { isReady: true, ping: vi.fn().mockResolvedValue('PONG') };
+}
 
 describe('HTTP security policy', () => {
   const database = { $queryRaw: vi.fn() };

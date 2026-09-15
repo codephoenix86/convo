@@ -11,6 +11,7 @@ export default defineConfig({
       LOG_LEVEL: 'silent',
       DATABASE_URL: 'postgresql://convo:convo@localhost:5432/convo_test?schema=public',
       DATABASE_CONNECTION_TIMEOUT_MS: '500',
+      REDIS_URL: 'redis://127.0.0.1:6379',
       ACCESS_TOKEN_SECRET: 'unit-test-access-token-secret-32-characters',
       ACCESS_TOKEN_TTL_SECONDS: '900',
       REFRESH_TOKEN_TTL_DAYS: '30',

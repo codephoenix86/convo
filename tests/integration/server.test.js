@@ -17,6 +17,10 @@ describe('server lifecycle', () => {
         LOG_LEVEL: 'info',
         DATABASE_URL: 'postgresql://convo:convo@127.0.0.1:1/convo_test',
         DATABASE_CONNECTION_TIMEOUT_MS: '100',
+        REDIS_URL: 'redis://127.0.0.1:1',
+        REDIS_CONNECT_TIMEOUT_MS: '100',
+        REDIS_COMMAND_TIMEOUT_MS: '100',
+        REDIS_RECONNECT_MAX_DELAY_MS: '100',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -64,6 +68,8 @@ describe('server lifecycle', () => {
       expect(signal).toBeNull();
       expect(stdout).toContain('"event":"shutdown_started"');
       expect(stdout).toContain('"event":"shutdown_completed"');
+      expect(stdout).toContain('"dependency":"redis"');
+      expect(stdout).toContain('"status":"unavailable"');
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill('SIGKILL');

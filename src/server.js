@@ -5,6 +5,7 @@ import { db } from './config/db.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { createApplicationRateLimiters } from './config/rate-limits.js';
+import { closeRedisClient, connectRedisClient, redis } from './config/redis.js';
 import { conversationsRepository } from './modules/conversations/conversations.repository.js';
 import { createConversationsService } from './modules/conversations/conversations.service.js';
 import { messagesRepository } from './modules/messages/messages.repository.js';
@@ -35,6 +36,14 @@ const io = createSocketServer(server, {
 messageEvents.attach(io);
 
 let shutdownPromise;
+const redisConnectionPromise = connectRedisClient(redis).catch((error) => {
+  if (!shutdownPromise) {
+    logger.error(
+      { err: error, dependency: 'redis', event: 'redis_connection_failed', status: 'unavailable' },
+      'Redis connection failed',
+    );
+  }
+});
 
 server.on('error', (error) => {
   logger.fatal({ err: error, event: 'server_error' }, 'HTTP server error');
@@ -94,6 +103,8 @@ async function shutdown(reason, exitCode) {
   try {
     await closeSocketServer();
     await closeHttpServer();
+    await closeRedisClient(redis);
+    await redisConnectionPromise;
     await db.$disconnect();
 
     process.exitCode = exitCode;

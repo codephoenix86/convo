@@ -20,7 +20,7 @@ Every response has `x-request-id`. Expected application codes include `VALIDATIO
 | Method | Path                                         | Authentication | Contract                                                                        |
 | ------ | -------------------------------------------- | -------------- | ------------------------------------------------------------------------------- |
 | GET    | `/health`                                    | No             | Process liveness.                                                               |
-| GET    | `/ready`                                     | No             | PostgreSQL readiness; returns 503 when unavailable.                             |
+| GET    | `/ready`                                     | No             | PostgreSQL and Redis readiness; returns 503 when either is unavailable.         |
 | POST   | `/auth/register`                             | No             | `{ email, username, password }`; creates user, refresh session, and token pair. |
 | POST   | `/auth/login`                                | No             | `{ identifier, password }`; returns user and token pair.                        |
 | POST   | `/auth/refresh`                              | No             | `{ refreshToken }`; atomically rotates the refresh session.                     |

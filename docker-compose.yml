@@ -16,6 +16,9 @@ x-api-environment: &api-environment
   LOCAL_STORAGE_SIGNING_SECRET: local-compose-storage-signing-secret-change-before-deployment
   LOCAL_STORAGE_URL_TTL_SECONDS: '300'
   REDIS_URL: redis://redis:6379
+  REDIS_CONNECT_TIMEOUT_MS: '5000'
+  REDIS_COMMAND_TIMEOUT_MS: '2000'
+  REDIS_RECONNECT_MAX_DELAY_MS: '3000'
 
 services:
   postgres:

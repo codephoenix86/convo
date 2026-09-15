@@ -97,32 +97,32 @@ Set `DEMO_BASE_URL` to target another API origin, for example `DEMO_BASE_URL=htt
 
 ## HTTP endpoints
 
-| Method | Path                                 | Purpose                                                 |
-| ------ | ------------------------------------ | ------------------------------------------------------- |
-| GET    | `/health`                            | Process liveness; does not query dependencies.          |
-| GET    | `/ready`                             | Readiness; returns `503` when PostgreSQL cannot answer. |
-| POST   | `/auth/register`                     | Create a user and authenticated refresh session.        |
-| POST   | `/auth/login`                        | Authenticate by email/username and create a session.    |
-| POST   | `/auth/refresh`                      | Rotate a refresh token and issue a new token pair.      |
-| POST   | `/auth/logout`                       | Revoke the current refresh session.                     |
-| POST   | `/auth/logout-all`                   | Revoke every refresh session owned by the user.         |
-| GET    | `/users/me`                          | Return the authenticated user's profile.                |
-| PATCH  | `/users/me`                          | Update the authenticated user's username/avatar.        |
-| GET    | `/users/search`                      | Search users with bounded cursor pagination.            |
-| POST   | `/conversations/direct`              | Create or reuse a canonical direct conversation.        |
-| GET    | `/conversations`                     | List conversations with last message and unread count.  |
-| POST   | `/conversations/group`               | Create a group with an owner and initial members.       |
-| PATCH  | `/conversations/:id`                 | Update group metadata as its owner or an admin.         |
-| POST   | `/conversations/:id/members`         | Add a group member as its owner or an admin.            |
-| DELETE | `/conversations/:id/members/:userId` | Remove a member when role rules allow it.               |
-| PATCH  | `/conversations/:id/members/:userId` | Promote or demote a member as owner.                    |
-| POST   | `/conversations/:id/messages`        | Persist an idempotent text message via REST.            |
-| GET    | `/conversations/:id/messages`        | Load stable cursor-paginated message history.           |
-| PUT    | `/conversations/:id/read`            | Advance the caller's read position monotonically.       |
-| PATCH  | `/messages/:id`                      | Edit a sender-owned text message.                       |
-| DELETE | `/messages/:id`                      | Soft-delete a sender-owned text message.                |
-| POST   | `/attachments/upload-init`           | Create an authorized, short-lived signed upload.        |
-| GET    | `/attachments/:id/content`           | Redirect an authorized member to a signed download.     |
+| Method | Path                                 | Purpose                                                |
+| ------ | ------------------------------------ | ------------------------------------------------------ |
+| GET    | `/health`                            | Process liveness; does not query dependencies.         |
+| GET    | `/ready`                             | PostgreSQL/Redis readiness; `503` if either is down.   |
+| POST   | `/auth/register`                     | Create a user and authenticated refresh session.       |
+| POST   | `/auth/login`                        | Authenticate by email/username and create a session.   |
+| POST   | `/auth/refresh`                      | Rotate a refresh token and issue a new token pair.     |
+| POST   | `/auth/logout`                       | Revoke the current refresh session.                    |
+| POST   | `/auth/logout-all`                   | Revoke every refresh session owned by the user.        |
+| GET    | `/users/me`                          | Return the authenticated user's profile.               |
+| PATCH  | `/users/me`                          | Update the authenticated user's username/avatar.       |
+| GET    | `/users/search`                      | Search users with bounded cursor pagination.           |
+| POST   | `/conversations/direct`              | Create or reuse a canonical direct conversation.       |
+| GET    | `/conversations`                     | List conversations with last message and unread count. |
+| POST   | `/conversations/group`               | Create a group with an owner and initial members.      |
+| PATCH  | `/conversations/:id`                 | Update group metadata as its owner or an admin.        |
+| POST   | `/conversations/:id/members`         | Add a group member as its owner or an admin.           |
+| DELETE | `/conversations/:id/members/:userId` | Remove a member when role rules allow it.              |
+| PATCH  | `/conversations/:id/members/:userId` | Promote or demote a member as owner.                   |
+| POST   | `/conversations/:id/messages`        | Persist an idempotent text message via REST.           |
+| GET    | `/conversations/:id/messages`        | Load stable cursor-paginated message history.          |
+| PUT    | `/conversations/:id/read`            | Advance the caller's read position monotonically.      |
+| PATCH  | `/messages/:id`                      | Edit a sender-owned text message.                      |
+| DELETE | `/messages/:id`                      | Soft-delete a sender-owned text message.               |
+| POST   | `/attachments/upload-init`           | Create an authorized, short-lived signed upload.       |
+| GET    | `/attachments/:id/content`           | Redirect an authorized member to a signed download.    |
 
 Every response includes an `x-request-id` header. A valid incoming request ID is preserved; otherwise, the server generates a UUID.
 
@@ -200,6 +200,10 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 | `DATABASE_URL`                        | PostgreSQL connection URL.                                  |
 | `TEST_DATABASE_URL`                   | Disposable PostgreSQL database used by tests.               |
 | `DATABASE_CONNECTION_TIMEOUT_MS`      | Database connection timeout from 100–30000ms.               |
+| `REDIS_URL`                           | Redis or TLS-enabled `rediss` connection URL.               |
+| `REDIS_CONNECT_TIMEOUT_MS`            | Redis connection timeout from 100–30000ms.                  |
+| `REDIS_COMMAND_TIMEOUT_MS`            | Redis command timeout from 100–30000ms.                     |
+| `REDIS_RECONNECT_MAX_DELAY_MS`        | Maximum Redis reconnect delay from 100–30000ms.             |
 | `ACCESS_TOKEN_SECRET`                 | Secret of at least 32 characters for JWTs.                  |
 | `ACCESS_TOKEN_TTL_SECONDS`            | Access-token lifetime from 60–3600 seconds.                 |
 | `REFRESH_TOKEN_TTL_DAYS`              | Refresh-session lifetime from 1–90 days.                    |
@@ -254,5 +258,6 @@ The `OBJECT_STORAGE_*` region, bucket, and credential variables are required onl
 - Conversation room access is rebuilt from persisted memberships and updated after successful direct/group membership writes.
 - Message sends use one transport-independent service for validation, authorization, idempotent persistence, and `message:new` publication; retries are not rebroadcast.
 - Every connection emits `session:ready` after authentication and room restoration so clients can resynchronize missed durable state through REST.
-- `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Prisma, and exit cleanly.
+- Redis reconnects with capped exponential backoff, rejects commands while offline, and makes `/ready` unavailable until a `PING` succeeds.
+- `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Redis and Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.

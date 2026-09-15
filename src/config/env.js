@@ -73,6 +73,14 @@ const environmentSchema = z
       .min(1, 'is required')
       .refine(isPostgresUrl, 'must be a valid PostgreSQL URL'),
     DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
+    REDIS_URL: z
+      .string({ error: 'is required' })
+      .trim()
+      .min(1, 'is required')
+      .refine(isRedisUrl, 'must be a valid Redis URL'),
+    REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
+    REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2000),
+    REDIS_RECONNECT_MAX_DELAY_MS: z.coerce.number().int().min(100).max(30_000).default(3000),
     ACCESS_TOKEN_SECRET: z
       .string({ error: 'is required' })
       .min(32, 'must contain at least 32 characters'),
@@ -176,6 +184,21 @@ function isPostgresUrl(value) {
     const url = new URL(value);
 
     return ['postgres:', 'postgresql:'].includes(url.protocol) && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isRedisUrl(value) {
+  try {
+    const url = new URL(value);
+    const databasePath = url.pathname.slice(1);
+
+    return (
+      ['redis:', 'rediss:'].includes(url.protocol) &&
+      Boolean(url.hostname) &&
+      (url.pathname === '' || url.pathname === '/' || /^\d+$/.test(databasePath))
+    );
   } catch {
     return false;
   }

@@ -28,6 +28,25 @@ describe('environment configuration', () => {
     expect(result.stderr).toContain('ACCESS_TOKEN_SECRET: is required');
   });
 
+  it('fails fast when REDIS_URL is missing', () => {
+    const environment = createEnvironment();
+    delete environment.REDIS_URL;
+
+    const result = runEnvironmentImport(environment);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('REDIS_URL: is required');
+  });
+
+  it('rejects non-Redis connection URLs', () => {
+    const result = runEnvironmentImport(
+      createEnvironment({ REDIS_URL: 'https://redis.example.com' }),
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('REDIS_URL: must be a valid Redis URL');
+  });
+
   it('normalizes valid configuration values', () => {
     const environment = createEnvironment({
       DATABASE_URL: 'postgresql://convo:convo@localhost:5432/convo_test',
@@ -44,6 +63,10 @@ describe('environment configuration', () => {
       TRUST_PROXY_HOPS: 0,
       LOG_LEVEL: 'silent',
       DATABASE_CONNECTION_TIMEOUT_MS: 500,
+      REDIS_URL: 'redis://localhost:6379',
+      REDIS_CONNECT_TIMEOUT_MS: 500,
+      REDIS_COMMAND_TIMEOUT_MS: 500,
+      REDIS_RECONNECT_MAX_DELAY_MS: 500,
       ACCESS_TOKEN_TTL_SECONDS: 900,
       REFRESH_TOKEN_TTL_DAYS: 30,
       JWT_ISSUER: 'convo-api-test',
@@ -199,6 +222,10 @@ function createEnvironment(overrides = {}) {
     PORT: '3001',
     LOG_LEVEL: 'silent',
     DATABASE_CONNECTION_TIMEOUT_MS: '500',
+    REDIS_URL: 'redis://localhost:6379',
+    REDIS_CONNECT_TIMEOUT_MS: '500',
+    REDIS_COMMAND_TIMEOUT_MS: '500',
+    REDIS_RECONNECT_MAX_DELAY_MS: '500',
     ACCESS_TOKEN_SECRET: 'integration-test-access-token-secret-value',
     ACCESS_TOKEN_TTL_SECONDS: '900',
     REFRESH_TOKEN_TTL_DAYS: '30',

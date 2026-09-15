@@ -6,6 +6,7 @@ import { db } from './config/db.js';
 import { env } from './config/env.js';
 import { objectStorage } from './config/object-storage.js';
 import { createApplicationRateLimiters } from './config/rate-limits.js';
+import { redis } from './config/redis.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestLogger } from './middleware/request-logger.js';
@@ -38,6 +39,7 @@ const CORS_EXPOSED_HEADERS = [
 
 export function createApp({
   database = db,
+  redisClient = redis,
   authentication = authService,
   users = usersService,
   conversations = conversationsService,
@@ -70,7 +72,7 @@ export function createApp({
   );
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
 
-  app.use(createHealthRouter({ database }));
+  app.use(createHealthRouter({ database, redisClient }));
   app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier, rateLimiters }));
   app.use('/users', createUsersRouter({ users, accessTokenVerifier, rateLimiters }));
   app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));

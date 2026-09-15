@@ -12,7 +12,7 @@ flowchart LR
   PostgreSQL[(PostgreSQL)]
   Memory[(Process memory)]
   Storage[(Local disk, S3-compatible storage, or Cloudinary)]
-  Redis[(Redis adapter and ephemeral state\nMilestone F, optional)]
+  Redis[(Redis)]
 
   Client -->|HTTPS JSON| HTTP
   Client <-->|WSS events and acknowledgements| Socket
@@ -20,6 +20,7 @@ flowchart LR
   Socket --> Services
   Services --> Repositories
   Repositories --> PostgreSQL
+  HTTP -->|readiness PING| Redis
   Services -->|sign, inspect| Storage
   Client -->|signed upload/download| Storage
   Socket -->|typing, presence, connection counts| Memory
@@ -34,7 +35,7 @@ REST routes validate authentication, path/query/body data, and then call a trans
 
 PostgreSQL is the durable source of truth for users, refresh sessions, conversations, memberships, messages, delivery/read positions, and attachment metadata. Socket events are notifications rather than a replay log. A reconnect reloads room membership from PostgreSQL and tells the client to resynchronize durable state through REST.
 
-Typing, presence, and bounded fixed-window rate-limit counters are deliberately process-local in the single-instance implementation. Ephemeral collaboration state expires or is cleared on disconnect and is never persisted as chat history. Auth endpoints use client-IP budgets, authenticated operations use user budgets, and REST/Socket.IO message sends share one limiter. Redis is not required through Milestone E; a Redis adapter and shared TTL-backed state belong to the optional multi-instance production milestone.
+Typing, presence, and bounded fixed-window rate-limit counters remain process-local at this stage. Ephemeral collaboration state expires or is cleared on disconnect and is never persisted as chat history. Auth endpoints use client-IP budgets, authenticated operations use user budgets, and REST/Socket.IO message sends share one limiter. The process now maintains a reconnecting Redis client and includes Redis in readiness; shared TTL-backed state and the Socket.IO adapter are separate horizontal-scaling steps.
 
 Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, bytes travel directly between the client and a private S3-compatible bucket. With `cloudinary`, the client uses a signed multipart upload and assets use authenticated delivery. With `local`, signed endpoints send bytes through the API to persistent disk. All drivers expose the same upload-contract, inspect, and download-contract interface; uploaded metadata is verified before message creation, while searchable attachment metadata remains provider-neutral in PostgreSQL.
 
@@ -42,8 +43,8 @@ Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, byte
 
 - `src/modules/*`: validation, controllers, services, repositories, and domain access rules.
 - `src/realtime/*`: socket authentication, room restoration, event handlers, presence, and typing state.
-- `src/config/*`: validated environment, logging, Prisma, and object-storage clients.
+- `src/config/*`: validated environment, logging, Prisma, Redis, and object-storage clients.
 - `src/middleware/*`: HTTP authentication, validation, rate limiting, request correlation/logging, and error mapping.
 - `tests/unit`, `tests/integration`, `tests/realtime`, `tests/database`: progressively broader behavior boundaries.
 
-The process shuts down Socket.IO, the HTTP server, and Prisma in order. A ten-second forced-shutdown guard prevents indefinite deployment hangs.
+The process shuts down Socket.IO, the HTTP server, Redis, and Prisma in order. A ten-second forced-shutdown guard prevents indefinite deployment hangs.

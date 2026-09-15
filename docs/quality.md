@@ -18,7 +18,7 @@ Database tests require `TEST_DATABASE_URL` to identify a disposable database who
 
 ## Continuous integration
 
-GitHub Actions runs the complete release gate on pull requests, pushes to `main`, and manual dispatches. The quality job installs exactly `package-lock.json`, checks formatting and lint, validates the Prisma schema, runs the default test suite, then deploys all migrations into an isolated PostgreSQL 18 service before running database-backed constraints, transactions, authorization, pagination, and query-plan tests. A Redis service is already available to the job for the horizontal-scaling milestone.
+GitHub Actions runs the complete release gate on pull requests, pushes to `main`, and manual dispatches. The quality job installs exactly `package-lock.json`, checks formatting and lint, validates the Prisma schema, runs the default test suite, then deploys all migrations into an isolated PostgreSQL 18 service before running database-backed constraints, transactions, authorization, pagination, and query-plan tests. A Redis service supplies the validated runtime dependency configuration and remains available for later shared-state and adapter tests.
 
 The container job runs only after application and database checks pass. It validates the Compose model and Dockerfile, builds the production target, and verifies that the image runs as a non-root user, loads the native Argon2 dependency, and excludes Vitest. BuildKit caches image layers, while `setup-node` caches npm's download cache by lockfile; neither job caches `node_modules` or build output.
 
