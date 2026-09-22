@@ -18,7 +18,7 @@ Every client command should include an acknowledgement callback. Success uses `{
 
 `attachments` contains up to four `{ storageKey, width?, height? }` references created by the signed-upload REST flow. Image dimensions must be paired. The server revalidates the uploaded object before persistence.
 
-`message:send` defaults to 120 attempts per minute for each authenticated user across all of that user's sockets and REST requests in this process. `typing:start` and `typing:stop` share a separate 12-events-per-two-seconds budget for each socket. A rejected command acknowledges `{ ok: false, error: { code: "RATE_LIMITED", message } }` and performs no domain-service work. These counters are process-local until the optional Redis scaling milestone.
+`message:send` defaults to 120 attempts per minute for each authenticated user across all sockets, REST requests, and API instances. Atomic Redis counters prevent bypassing the budget by changing transport or instance. `typing:start` and `typing:stop` share a separate 12-events-per-two-seconds budget for each socket. A rejected command acknowledges `{ ok: false, error: { code: "RATE_LIMITED", message } }` and performs no domain-service work.
 
 ## Server-to-client events
 
@@ -35,7 +35,7 @@ Every client command should include an acknowledgement callback. Success uses `{
 | `typing:start`      | `{ typing: { conversationId, userId, isTyping: true, expiresAt } }`        | Authorized ephemeral typing state.                                                       |
 | `typing:stop`       | `{ typing: { conversationId, userId, isTyping: false, expiresAt: null } }` | Typing stopped, expired, or disconnected.                                                |
 
-Presence is notification-only: no client-originated `presence:update` handler exists. Multi-device counts prevent one tab from making a still-connected user appear offline.
+Presence is notification-only: no client-originated `presence:update` handler exists. Redis-backed multi-device counts prevent one tab or API instance from making a still-connected user appear offline, and heartbeat TTLs clear state left by crashed processes.
 
 ## Reconnect contract
 

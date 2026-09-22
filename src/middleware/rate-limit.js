@@ -1,8 +1,8 @@
 import { RateLimitError } from '../lib/errors.js';
 
 export function createRateLimitMiddleware({ limiter, key, message }) {
-  return function enforceRateLimit(request, response, next) {
-    const result = limiter.consume(key(request));
+  return async function enforceRateLimit(request, response, next) {
+    const result = await limiter.consume(key(request));
     const resetAfterSeconds = Math.max(1, Math.ceil(result.resetAfterMs / 1000));
 
     response.set({

@@ -67,6 +67,24 @@ describe('authentication rate limits', () => {
       expect(authentication[serviceMethod]).toHaveBeenCalledTimes(2);
     },
   );
+
+  it('fails closed without calling authentication when Redis is unavailable', async () => {
+    const authentication = createAuthentication();
+    const redisClient = { eval: vi.fn().mockRejectedValue(new Error('Redis unavailable')) };
+    const rateLimiters = createApplicationRateLimiters({ redisClient });
+    const app = createApp({ authentication, rateLimiters });
+
+    const response = await request(app)
+      .post('/auth/login')
+      .send({ identifier: 'limited_user', password: 'Secure-password1!' })
+      .expect(500);
+
+    expect(response.body.error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      message: 'An unexpected error occurred',
+    });
+    expect(authentication.login).not.toHaveBeenCalled();
+  });
 });
 
 describe('authenticated endpoint rate limits', () => {

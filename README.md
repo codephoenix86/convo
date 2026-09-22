@@ -1,8 +1,8 @@
 # Convo Chat Backend
 
-A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, and Prisma. Redis-backed horizontal scaling is planned after single-instance real-time correctness.
+A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, Prisma, and Redis. A Socket.IO adapter remains the final step for cross-instance event delivery.
 
-Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Redis-backed multi-instance coordination remains an optional Milestone F concern.
+Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Milestone F adds production packaging and Redis-backed ephemeral coordination.
 
 ## Documentation
 
@@ -128,7 +128,7 @@ Every response includes an `x-request-id` header. A valid incoming request ID is
 
 ### Rate limits
 
-Registration (5 per 15 minutes) and login (10 per 15 minutes) are limited by client IP. User search (60 per minute), message sends (120 per minute), and upload initialization (20 per minute) are limited by authenticated user. REST and Socket.IO message sends consume the same budget, so switching transports cannot bypass it. Limited HTTP responses return `429 RATE_LIMITED` with `RateLimit-*` and `Retry-After` headers; see [quality and performance evidence](docs/quality.md#rate-limit-policy) for the full policy and deployment notes.
+Registration (5 per 15 minutes) and login (10 per 15 minutes) are limited by client IP. User search (60 per minute), message sends (120 per minute), and upload initialization (20 per minute) are limited by authenticated user. Atomic Redis counters make these budgets shared by every API instance. REST and Socket.IO message sends consume the same budget, so switching transports cannot bypass it. Limited HTTP responses return `429 RATE_LIMITED` with `RateLimit-*` and `Retry-After` headers; see [quality and performance evidence](docs/quality.md#rate-limit-policy) for the full policy and deployment notes.
 
 ## Attachment uploads
 
@@ -154,9 +154,9 @@ Senders edit and soft-delete their text messages with `message:edit` using `{ me
 
 Clients acknowledge receipt with `message:delivered` and advance their read position with `conversation:read`; both accept `{ conversationId, messageId }` and require an acknowledgement callback. Successful responses and room broadcasts contain the canonical member receipt in `{ receipt }`. Delivery and read positions advance monotonically using server message order, duplicate or older updates are not rebroadcast, and a read update also advances delivery because a read message has necessarily been delivered.
 
-Typing indicators use `typing:start` and `typing:stop` with `{ conversationId }` plus an acknowledgement callback. The server derives the user from the authenticated socket, rechecks conversation membership, and broadcasts `{ typing: { conversationId, userId, isTyping, expiresAt } }`. Repeated starts refresh a five-second expiry while broadcasts are debounced; bursts are rate limited, disconnects clear that socket's state, and a user remains typing while any of their connected devices is still active. Typing state is intentionally ephemeral and is never written to PostgreSQL.
+Typing indicators use `typing:start` and `typing:stop` with `{ conversationId }` plus an acknowledgement callback. The server derives the user from the authenticated socket, rechecks conversation membership, and broadcasts `{ typing: { conversationId, userId, isTyping, expiresAt } }`. Repeated starts refresh a five-second Redis expiry while broadcasts are debounced across instances; bursts are rate limited, disconnects clear that socket's state, and a user remains typing while any of their connected devices is still active. Typing state is intentionally ephemeral and is never written to PostgreSQL.
 
-Presence is server-generated; clients do not emit presence claims. After `session:ready`, each socket receives `presence:snapshot` containing online users visible through its authorized conversation rooms. The first active device for a user broadcasts `presence:update` with `{ presence: { userId, isOnline: true, changedAt } }`; only the final device disconnect broadcasts the corresponding offline update. Presence is process-local and ephemeral until the optional Redis scaling milestone.
+Presence is server-generated; clients do not emit presence claims. After `session:ready`, each socket receives `presence:snapshot` containing online users visible through PostgreSQL-authorized conversations. Redis tracks connection counts across instances with expiring heartbeats, so crashed-process state disappears automatically. The first active device for a user broadcasts `presence:update` with `{ presence: { userId, isOnline: true, changedAt } }`; only the final device disconnect broadcasts the corresponding offline update.
 
 ### Reconnect and resynchronization
 
@@ -237,14 +237,14 @@ The `OBJECT_STORAGE_*` region, bucket, and credential variables are required onl
 - Access JWTs are signed with HS256 and restricted to the configured issuer, audience, and lifetime.
 - Helmet applies standard HTTP security headers, and REST CORS grants browser access only to origins in `CLIENT_ORIGINS` without enabling credentialed cookies.
 - Refresh tokens rotate atomically; current/all-session logout revokes server-side refresh state.
-- Sensitive operations use bounded fixed-window limits keyed by client IP or authenticated user; message sends share one budget across REST and Socket.IO.
-- Rate-limit counters are process-local. `TRUST_PROXY_HOPS` must match the deployment's trusted proxy chain before IP-based limits rely on forwarded addresses.
+- Sensitive operations use Redis-backed fixed-window limits keyed by client IP or authenticated user; message sends share one budget across REST, Socket.IO, and API instances.
+- Rate limiting fails closed when Redis is unavailable. `TRUST_PROXY_HOPS` must match the deployment's trusted proxy chain before IP-based limits rely on forwarded addresses.
 - Direct-conversation identity is a canonical sorted participant key, so retries reuse one row.
 - Conversation lists use stable cursors and bounded queries for participants, latest messages, and unread counts.
 - Read positions use canonical message timestamps and IDs, never move backward, and are returned with conversation members for resynchronization.
 - Delivery receipts are durable per-member positions; read and delivery updates are authorized per event and broadcast only after persisted advancement.
-- Typing indicators are authorized, burst-limited, broadcast-coalesced, multi-device aware, and automatically expire after five seconds.
-- Presence snapshots and updates are derived from authenticated sockets and shared authorized rooms; multi-device connection counts prevent false offline transitions.
+- Typing indicators are authorized, burst-limited, Redis-backed, broadcast-coalesced, multi-device aware, and automatically expire after five seconds.
+- Presence snapshots and updates are derived from authenticated sockets and persisted memberships; Redis TTLs and shared connection counts prevent stale or false offline transitions.
 - Group creation writes the conversation, owner, and initial members atomically; only owners/admins may edit metadata.
 - Group role rules are centralized: admins manage members, while only owners manage admins and roles.
 - REST and Socket.IO sends share one message service for authorization and idempotent persistence.

@@ -69,13 +69,18 @@ async function initializeConnectedSocket(socket, ready, presenceCoordinator, log
     const initialized = await ready;
 
     if (initialized) {
-      trackSocket(socket, presenceCoordinator, log);
+      const tracked = await trackSocket(socket, presenceCoordinator, log);
+
+      if (!tracked) {
+        return;
+      }
+
       socket.emit('session:ready', {
         connectionId: socket.id,
         serverTime: new Date().toISOString(),
         syncRequired: true,
       });
-      presenceCoordinator.sendSnapshot(socket);
+      await presenceCoordinator.sendSnapshot(socket);
     }
   } catch (error) {
     log.error(
@@ -91,28 +96,37 @@ async function initializeConnectedSocket(socket, ready, presenceCoordinator, log
   }
 }
 
-function trackSocket(socket, presenceCoordinator, log) {
+async function trackSocket(socket, presenceCoordinator, log) {
   const userId = socket.data.user.id;
   const connectedAt = Date.now();
-  const counts = presenceCoordinator.connectSocket(socket);
-  let disconnectedCounts;
+  const counts = await presenceCoordinator.connectSocket(socket);
+  let disconnectedCountsPromise = Promise.resolve();
+
+  if (!socket.connected) {
+    await presenceCoordinator.disconnectSocket(socket);
+    return false;
+  }
 
   socket.once('disconnecting', () => {
-    disconnectedCounts = presenceCoordinator.disconnectSocket(socket);
+    disconnectedCountsPromise = Promise.resolve(presenceCoordinator.disconnectSocket(socket)).catch(
+      (error) => {
+        log.error(
+          {
+            err: error,
+            event: 'presence_disconnect_cleanup_failed',
+            socketId: socket.id,
+            userId,
+          },
+          'Presence state cleanup failed',
+        );
+
+        return undefined;
+      },
+    );
   });
 
   socket.once('disconnect', (reason) => {
-    log.info(
-      {
-        event: 'socket_disconnected',
-        socketId: socket.id,
-        userId,
-        reason,
-        connectedMs: Date.now() - connectedAt,
-        ...disconnectedCounts,
-      },
-      'Socket disconnected',
-    );
+    void logDisconnection(reason);
   });
 
   log.info(
@@ -126,6 +140,24 @@ function trackSocket(socket, presenceCoordinator, log) {
     },
     'Socket connected',
   );
+
+  return true;
+
+  async function logDisconnection(reason) {
+    const disconnectedCounts = await disconnectedCountsPromise;
+
+    log.info(
+      {
+        event: 'socket_disconnected',
+        socketId: socket.id,
+        userId,
+        reason,
+        connectedMs: Date.now() - connectedAt,
+        ...disconnectedCounts,
+      },
+      'Socket disconnected',
+    );
+  }
 }
 
 function createConversationRoomInitializer(roomCoordinator, membershipRepository, log) {

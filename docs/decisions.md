@@ -18,12 +18,12 @@ Socket.IO supplies authenticated connection middleware, rooms, acknowledgements,
 
 The client creates a `clientMessageId`, and PostgreSQL uniquely constrains it per sender/conversation. A retry returns the original canonical message and does not rebroadcast. This is simple and survives process restarts. It does require clients to persist/reuse the ID for the same logical send and does not attempt exactly-once delivery—an unrealistic guarantee across networks.
 
-## 5. Redis is deferred until multi-instance deployment
+## 5. Redis coordinates only recoverable ephemeral state
 
-Single-instance presence, typing TTLs, debounce state, and connection counts live in process memory. This makes expiration behavior explicit and keeps Milestone D runnable without another stateful dependency. The limitation is intentional: two API instances would disagree and their Socket.IO rooms would be isolated. Milestone F may add node-redis plus the Socket.IO Redis adapter, shared TTL/connection-count keys, reconnect handling, and a two-instance test. Redis will coordinate ephemeral state; it will not replace PostgreSQL as chat history.
+Presence heartbeats, multi-device connection counts, typing TTLs, broadcast debounce keys, and rate-limit counters live in Redis. Atomic scripts prevent two API instances from producing conflicting first-device/final-device transitions, while TTLs remove stale presence and typing state after a process crash. Presence visibility still comes from PostgreSQL memberships. Redis loss therefore degrades readiness and rejects state-dependent work but cannot lose messages, memberships, receipts, or attachment metadata. The Socket.IO Redis adapter is still required before room broadcasts cross process boundaries.
 
 ## 6. Rate limits match operation cost and identity
 
 Authentication attempts use client-IP budgets because no verified user exists yet; authenticated searches, sends, and upload initialization use the verified user ID so reconnecting or opening another tab does not reset a budget. Message sends deliberately share one limiter across REST and Socket.IO. This prevents transport switching from bypassing protection while keeping policy outside the message service.
 
-The implementation is a bounded, process-local fixed-window map, which is sufficient and easy to inspect for one instance. It is not presented as globally consistent: horizontal scaling requires shared counters, likely as part of Milestone F's Redis work. `TRUST_PROXY_HOPS` defaults to zero and must match the exact trusted proxy chain before forwarded client addresses are accepted for IP-keyed limits.
+The production implementation uses atomic Redis fixed-window counters, so all API instances enforce one budget and Redis failure cannot silently bypass protection. An in-memory implementation remains available as an injected test double. `TRUST_PROXY_HOPS` defaults to zero and must match the exact trusted proxy chain before forwarded client addresses are accepted for IP-keyed limits.

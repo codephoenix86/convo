@@ -28,6 +28,25 @@ describe('conversations repository', () => {
     });
   });
 
+  it('loads distinct member IDs for presence visibility', async () => {
+    const database = {
+      conversationMember: {
+        findMany: vi.fn().mockResolvedValue([{ userId }, { userId: participantId }, { userId }]),
+      },
+    };
+    const repository = createConversationsRepository(database);
+
+    await expect(
+      repository.listMemberIdsForConversations([conversationId, conversationId]),
+    ).resolves.toEqual([userId, participantId].sort());
+    expect(database.conversationMember.findMany).toHaveBeenCalledWith({
+      where: { conversationId: { in: [conversationId] } },
+      select: { userId: true },
+    });
+    await expect(repository.listMemberIdsForConversations([])).resolves.toEqual([]);
+    expect(database.conversationMember.findMany).toHaveBeenCalledOnce();
+  });
+
   it('creates or reuses a direct conversation and both memberships in one transaction', async () => {
     const conversation = { id: conversationId };
     const transaction = {

@@ -63,7 +63,7 @@ These checks prove the intended PostgreSQL access paths are usable on a realisti
 
 Limited HTTP responses use `429 RATE_LIMITED` and expose `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After`. Socket commands return the same error code in their acknowledgement envelope. Message sends share one per-user budget across REST and Socket.IO so changing transports cannot bypass it.
 
-The fixed-window counters are bounded and process-local, matching the current single-instance architecture. A multi-instance deployment must move rate-limit state to a shared store alongside the optional Redis scaling work.
+The production fixed-window counters are atomic Redis keys with bounded expiry, so every API instance and both message transports share the same budget. Redis errors fail closed instead of silently falling back to per-process counters. Deterministic tests inject the equivalent in-memory limiter.
 
 Express trusts no proxy by default. Set `TRUST_PROXY_HOPS` to the exact number of trusted reverse-proxy hops so IP-keyed auth limits use the real client address. Over-trusting this value can let callers spoof forwarded addresses.
 

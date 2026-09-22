@@ -12,6 +12,8 @@ import { messagesRepository } from './modules/messages/messages.repository.js';
 import { createMessagesService } from './modules/messages/messages.service.js';
 import { createConversationRoomCoordinator } from './realtime/conversation-rooms.js';
 import { createRealtimeMessageEvents } from './realtime/message-events.js';
+import { createRedisPresenceCoordinator } from './realtime/redis-presence.js';
+import { createRedisTypingCoordinator } from './realtime/redis-typing.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -20,7 +22,12 @@ const conversations = createConversationsService(conversationsRepository, {
   membershipEvents: conversationRooms,
 });
 const messageEvents = createRealtimeMessageEvents();
-const rateLimiters = createApplicationRateLimiters();
+const rateLimiters = createApplicationRateLimiters({ redisClient: redis });
+const presenceCoordinator = createRedisPresenceCoordinator({
+  redisClient: redis,
+  membershipRepository: conversationsRepository,
+});
+const typingCoordinator = createRedisTypingCoordinator({ redisClient: redis });
 const messages = createMessagesService({
   repository: messagesRepository,
   accessRepository: conversationsRepository,
@@ -30,6 +37,8 @@ const app = createApp({ conversations, messages, rateLimiters });
 const server = createServer(app);
 const io = createSocketServer(server, {
   roomCoordinator: conversationRooms,
+  presenceCoordinator,
+  typingCoordinator,
   messageSendRateLimiter: rateLimiters.messageSend,
   messages,
 });

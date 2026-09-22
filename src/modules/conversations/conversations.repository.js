@@ -62,6 +62,19 @@ export function createConversationsRepository(database = db) {
       return memberships.map((membership) => membership.conversationId);
     },
 
+    async listMemberIdsForConversations(conversationIds) {
+      if (conversationIds.length === 0) {
+        return [];
+      }
+
+      const memberships = await database.conversationMember.findMany({
+        where: { conversationId: { in: [...new Set(conversationIds)] } },
+        select: { userId: true },
+      });
+
+      return [...new Set(memberships.map((membership) => membership.userId))].sort();
+    },
+
     findAccessContext(conversationId, userIds) {
       return database.conversation.findUnique({
         where: { id: conversationId },

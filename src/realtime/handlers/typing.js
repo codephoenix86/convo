@@ -20,7 +20,21 @@ export function registerTypingHandlers(
   register(TYPING_STOP_EVENT, (command) =>
     typing.stop({ ...command, userId: socket.data.user.id, socketId: socket.id }),
   );
-  socket.once('disconnect', () => typing.disconnectSocket(socket.id));
+  socket.once('disconnect', () => {
+    Promise.resolve()
+      .then(() => typing.disconnectSocket(socket.id))
+      .catch((error) => {
+        log.error(
+          {
+            err: error,
+            event: 'typing_disconnect_cleanup_failed',
+            socketId: socket.id,
+            userId: socket.data.user.id,
+          },
+          'Typing state cleanup failed',
+        );
+      });
+  });
 
   function register(eventName, update) {
     registerAcknowledgedEvent(socket, {
@@ -36,7 +50,7 @@ export function registerTypingHandlers(
         ]);
         requireConversationMember(context, socket.data.user.id);
 
-        return { typing: update(command) };
+        return { typing: await update(command) };
       },
     });
   }

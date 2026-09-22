@@ -14,7 +14,9 @@ export function registerMessageHandlers(socket, { messages, ready, messageSendRa
     ready,
     log,
     handle: async (payload) => {
-      const rateLimit = messageSendRateLimiter.consume(getUserRateLimitKey(socket.data.user.id));
+      const rateLimit = await messageSendRateLimiter.consume(
+        getUserRateLimitKey(socket.data.user.id),
+      );
 
       if (!rateLimit.allowed) {
         throw new RateLimitError('Message sends are too frequent');
