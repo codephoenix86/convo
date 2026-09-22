@@ -11,6 +11,7 @@ import { createConversationRoomCoordinator } from './conversation-rooms.js';
 import { registerMessageHandlers } from './handlers/messages.js';
 import { registerTypingHandlers } from './handlers/typing.js';
 import { createPresenceCoordinator } from './presence.js';
+import { createSocketAdapterReadinessMiddleware } from './socket-redis-adapter.js';
 import { createTypingCoordinator } from './typing.js';
 
 export function createSocketServer(
@@ -25,6 +26,7 @@ export function createSocketServer(
     typingRateLimit,
     messageSendRateLimiter = createApplicationRateLimiters().messageSend,
     messages = messagesService,
+    socketAdapter,
     log = logger,
   } = {},
 ) {
@@ -45,6 +47,9 @@ export function createSocketServer(
   roomCoordinator.attach(io);
   presenceCoordinator.attach(io);
   typingCoordinator.attach(io);
+  if (socketAdapter) {
+    io.use(createSocketAdapterReadinessMiddleware(socketAdapter));
+  }
   io.use(createSocketAuthenticator(accessTokenVerifier, log));
   io.use(createConversationRoomInitializer(roomCoordinator, membershipRepository, log));
   io.on('connection', (socket) => {

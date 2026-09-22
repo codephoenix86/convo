@@ -46,6 +46,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1129.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@socket.io/redis-adapter": "8.3.0",
     "argon2": "0.45.1",
     "cloudinary": "^2.11.0",
     "cors": "^2.8.6",

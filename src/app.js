@@ -40,6 +40,7 @@ const CORS_EXPOSED_HEADERS = [
 export function createApp({
   database = db,
   redisClient = redis,
+  socketAdapter,
   authentication = authService,
   users = usersService,
   conversations = conversationsService,
@@ -72,7 +73,7 @@ export function createApp({
   );
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
 
-  app.use(createHealthRouter({ database, redisClient }));
+  app.use(createHealthRouter({ database, redisClient, socketAdapter }));
   app.use('/auth', createAuthRouter({ authentication, accessTokenVerifier, rateLimiters }));
   app.use('/users', createUsersRouter({ users, accessTokenVerifier, rateLimiters }));
   app.use('/conversations', createConversationsRouter({ conversations, accessTokenVerifier }));

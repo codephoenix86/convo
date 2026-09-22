@@ -12,7 +12,7 @@ Attachment bytes are also excluded: they belong in object storage, while Postgre
 
 ## 3. Socket.IO instead of raw WebSocket
 
-Socket.IO supplies authenticated connection middleware, rooms, acknowledgements, reconnection support, and a future multi-node adapter. The trade-off is protocol/library overhead and a Socket.IO-specific client. For a chat backend, those reliability primitives are more valuable than minimizing framing bytes; REST remains the durable recovery path when notifications are missed.
+Socket.IO supplies authenticated connection middleware, rooms, acknowledgements, reconnection support, and a Redis-backed multi-node adapter. The trade-off is protocol/library overhead and a Socket.IO-specific client. For a chat backend, those reliability primitives are more valuable than minimizing framing bytes; REST remains the durable recovery path when notifications are missed.
 
 ## 4. Client-generated message IDs provide idempotency
 
@@ -20,7 +20,7 @@ The client creates a `clientMessageId`, and PostgreSQL uniquely constrains it pe
 
 ## 5. Redis coordinates only recoverable ephemeral state
 
-Presence heartbeats, multi-device connection counts, typing TTLs, broadcast debounce keys, and rate-limit counters live in Redis. Atomic scripts prevent two API instances from producing conflicting first-device/final-device transitions, while TTLs remove stale presence and typing state after a process crash. Presence visibility still comes from PostgreSQL memberships. Redis loss therefore degrades readiness and rejects state-dependent work but cannot lose messages, memberships, receipts, or attachment metadata. The Socket.IO Redis adapter is still required before room broadcasts cross process boundaries.
+Presence heartbeats, multi-device connection counts, typing TTLs, broadcast debounce keys, and rate-limit counters live in Redis. Atomic scripts prevent two API instances from producing conflicting first-device/final-device transitions, while TTLs remove stale presence and typing state after a process crash. Socket.IO's sharded Redis adapter uses dedicated connections to carry room broadcasts across instances. Presence visibility still comes from PostgreSQL memberships. Redis loss therefore degrades readiness, disconnects sockets to prevent silently local-only delivery, and rejects state-dependent work, but cannot lose messages, memberships, receipts, or attachment metadata.
 
 ## 6. Rate limits match operation cost and identity
 

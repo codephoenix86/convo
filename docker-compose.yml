@@ -19,6 +19,7 @@ x-api-environment: &api-environment
   REDIS_CONNECT_TIMEOUT_MS: '5000'
   REDIS_COMMAND_TIMEOUT_MS: '2000'
   REDIS_RECONNECT_MAX_DELAY_MS: '3000'
+  SOCKET_IO_REDIS_CHANNEL_PREFIX: convo:socket.io
 
 services:
   postgres:

@@ -81,6 +81,16 @@ const environmentSchema = z
     REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
     REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2000),
     REDIS_RECONNECT_MAX_DELAY_MS: z.coerce.number().int().min(100).max(30_000).default(3000),
+    SOCKET_IO_REDIS_CHANNEL_PREFIX: z
+      .string()
+      .trim()
+      .min(1, 'must not be empty')
+      .max(100)
+      .regex(
+        /^[A-Za-z0-9:_-]+$/,
+        'must contain only letters, numbers, colons, underscores, or hyphens',
+      )
+      .default('convo:socket.io'),
     ACCESS_TOKEN_SECRET: z
       .string({ error: 'is required' })
       .min(32, 'must contain at least 32 characters'),

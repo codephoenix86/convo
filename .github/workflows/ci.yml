@@ -69,6 +69,7 @@ jobs:
       REDIS_CONNECT_TIMEOUT_MS: '5000'
       REDIS_COMMAND_TIMEOUT_MS: '2000'
       REDIS_RECONNECT_MAX_DELAY_MS: '3000'
+      SOCKET_IO_REDIS_CHANNEL_PREFIX: convo:socket.io
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

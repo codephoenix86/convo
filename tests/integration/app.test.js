@@ -81,6 +81,36 @@ describe('system endpoints', () => {
     });
     expect(response.text).not.toContain('sensitive Redis failure');
   });
+
+  it('includes Socket.IO adapter availability when configured', async () => {
+    const database = { $queryRaw: vi.fn().mockResolvedValue([{ value: 1 }]) };
+    const socketAdapter = { isReady: vi.fn().mockReturnValue(true) };
+
+    const ready = await request(
+      createApp({ database, redisClient: createReadyRedisClient(), socketAdapter }),
+    )
+      .get('/ready')
+      .expect(200);
+
+    expect(ready.body.checks).toEqual({
+      database: 'up',
+      redis: 'up',
+      socketAdapter: 'up',
+    });
+
+    socketAdapter.isReady.mockReturnValue(false);
+    const unavailable = await request(
+      createApp({ database, redisClient: createReadyRedisClient(), socketAdapter }),
+    )
+      .get('/ready')
+      .expect(503);
+
+    expect(unavailable.body.checks).toEqual({
+      database: 'up',
+      redis: 'up',
+      socketAdapter: 'down',
+    });
+  });
 });
 
 function createReadyRedisClient() {

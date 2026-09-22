@@ -20,7 +20,7 @@ Every response has `x-request-id`. Expected application codes include `VALIDATIO
 | Method | Path                                         | Authentication | Contract                                                                        |
 | ------ | -------------------------------------------- | -------------- | ------------------------------------------------------------------------------- |
 | GET    | `/health`                                    | No             | Process liveness.                                                               |
-| GET    | `/ready`                                     | No             | PostgreSQL and Redis readiness; returns 503 when either is unavailable.         |
+| GET    | `/ready`                                     | No             | PostgreSQL, Redis, and Socket adapter readiness; returns 503 on failure.        |
 | POST   | `/auth/register`                             | No             | `{ email, username, password }`; creates user, refresh session, and token pair. |
 | POST   | `/auth/login`                                | No             | `{ identifier, password }`; returns user and token pair.                        |
 | POST   | `/auth/refresh`                              | No             | `{ refreshToken }`; atomically rotates the refresh session.                     |
@@ -58,7 +58,7 @@ Unknown/nonmember conversation resources intentionally return 404 where possible
 
 HTTP responses for limited routes include `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset`; rejected requests also include `Retry-After` and return `429 RATE_LIMITED`. The message budget is shared with Socket.IO `message:send` for the same user.
 
-IP-based limits use Express's resolved client address. `TRUST_PROXY_HOPS` defaults to `0`; set it only to the exact trusted reverse-proxy hop count in a deployment. Counters are process-local and require a shared store before horizontally scaling the API.
+IP-based limits use Express's resolved client address. `TRUST_PROXY_HOPS` defaults to `0`; set it only to the exact trusted reverse-proxy hop count in a deployment. Atomic Redis counters share every budget across API instances and fail closed when Redis is unavailable.
 
 ## Authentication example
 

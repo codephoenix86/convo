@@ -22,6 +22,7 @@ flowchart LR
   HTTP -->|readiness PING| Redis
   Services -->|sign, inspect| Storage
   Client -->|signed upload/download| Storage
+  Socket <-->|sharded Pub/Sub adapter| Redis
   Socket -->|typing, presence, connection counts| Redis
   HTTP -->|rate-limit counters| Redis
   Socket -->|rate-limit counters| Redis
@@ -33,16 +34,16 @@ REST routes validate authentication, path/query/body data, and then call a trans
 
 PostgreSQL is the durable source of truth for users, refresh sessions, conversations, memberships, messages, delivery/read positions, and attachment metadata. Socket events are notifications rather than a replay log. A reconnect reloads room membership from PostgreSQL and tells the client to resynchronize durable state through REST.
 
-Typing, presence connection counts, and fixed-window rate-limit counters use Redis so API instances agree on ephemeral state. Presence heartbeats and typing entries have bounded TTLs, making process crashes self-healing. Auth endpoints use client-IP budgets, authenticated operations use user budgets, and REST/Socket.IO message sends share one atomic limiter. Redis failure makes readiness unavailable and state-dependent operations fail closed. PostgreSQL remains the source of truth for memberships and every durable chat record; the Socket.IO adapter is a separate cross-instance delivery step.
+Typing, presence connection counts, and fixed-window rate-limit counters use Redis so API instances agree on ephemeral state. Presence heartbeats and typing entries have bounded TTLs, making process crashes self-healing. Auth endpoints use client-IP budgets, authenticated operations use user budgets, and REST/Socket.IO message sends share one atomic limiter. Dedicated Redis publisher/subscriber connections run Socket.IO's sharded adapter so room broadcasts reach sockets on every API instance. Redis or adapter failure makes readiness unavailable, rejects new socket connections, disconnects existing local sockets, and makes state-dependent operations fail closed. PostgreSQL remains the source of truth for memberships and every durable chat record, so reconnecting clients recover through REST.
 
 Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, bytes travel directly between the client and a private S3-compatible bucket. With `cloudinary`, the client uses a signed multipart upload and assets use authenticated delivery. With `local`, signed endpoints send bytes through the API to persistent disk. All drivers expose the same upload-contract, inspect, and download-contract interface; uploaded metadata is verified before message creation, while searchable attachment metadata remains provider-neutral in PostgreSQL.
 
 ## Module boundaries
 
 - `src/modules/*`: validation, controllers, services, repositories, and domain access rules.
-- `src/realtime/*`: socket authentication, room restoration, event handlers, presence, and typing state.
+- `src/realtime/*`: socket authentication, Redis adapter lifecycle, room restoration, event handlers, presence, and typing state.
 - `src/config/*`: validated environment, logging, Prisma, Redis, and object-storage clients.
 - `src/middleware/*`: HTTP authentication, validation, rate limiting, request correlation/logging, and error mapping.
 - `tests/unit`, `tests/integration`, `tests/realtime`, `tests/database`: progressively broader behavior boundaries.
 
-The process shuts down Socket.IO, the HTTP server, Redis, and Prisma in order. A ten-second forced-shutdown guard prevents indefinite deployment hangs.
+The process shuts down Socket.IO, the HTTP server, the adapter's dedicated Redis clients, the command Redis client, and Prisma in order. A ten-second forced-shutdown guard prevents indefinite deployment hangs.

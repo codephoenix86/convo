@@ -25,33 +25,55 @@ export function createRedisClient({
     },
   });
 
+  observeRedisClient(client, { log, role: 'commands' });
+
+  return client;
+}
+
+export function observeRedisClient(client, { log = logger, role = 'commands' } = {}) {
   client.on('connect', () => {
     log.debug(
-      { dependency: 'redis', event: 'redis_connecting', status: 'connecting' },
+      { dependency: 'redis', event: 'redis_connecting', redisRole: role, status: 'connecting' },
       'Redis connection opened',
     );
   });
   client.on('ready', () => {
     log.info(
-      { dependency: 'redis', event: 'redis_ready', status: 'available' },
+      { dependency: 'redis', event: 'redis_ready', redisRole: role, status: 'available' },
       'Dependency check completed',
     );
   });
   client.on('error', (error) => {
     log.error(
-      { err: error, dependency: 'redis', event: 'redis_error', status: 'unavailable' },
+      {
+        err: error,
+        dependency: 'redis',
+        event: 'redis_error',
+        redisRole: role,
+        status: 'unavailable',
+      },
       'Redis connection error',
     );
   });
   client.on('reconnecting', () => {
     log.warn(
-      { dependency: 'redis', event: 'redis_reconnecting', status: 'reconnecting' },
+      {
+        dependency: 'redis',
+        event: 'redis_reconnecting',
+        redisRole: role,
+        status: 'reconnecting',
+      },
       'Redis reconnect scheduled',
     );
   });
   client.on('end', () => {
     log.info(
-      { dependency: 'redis', event: 'redis_disconnected', status: 'disconnected' },
+      {
+        dependency: 'redis',
+        event: 'redis_disconnected',
+        redisRole: role,
+        status: 'disconnected',
+      },
       'Redis connection closed',
     );
   });

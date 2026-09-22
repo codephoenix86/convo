@@ -67,6 +67,7 @@ describe('environment configuration', () => {
       REDIS_CONNECT_TIMEOUT_MS: 500,
       REDIS_COMMAND_TIMEOUT_MS: 500,
       REDIS_RECONNECT_MAX_DELAY_MS: 500,
+      SOCKET_IO_REDIS_CHANNEL_PREFIX: 'convo:socket.io',
       ACCESS_TOKEN_TTL_SECONDS: 900,
       REFRESH_TOKEN_TTL_DAYS: 30,
       JWT_ISSUER: 'convo-api-test',
@@ -129,6 +130,15 @@ describe('environment configuration', () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('CLIENT_ORIGINS: contains an invalid origin');
+  });
+
+  it('rejects unsafe Socket.IO Redis channel prefixes', () => {
+    const result = runEnvironmentImport(
+      createEnvironment({ SOCKET_IO_REDIS_CHANNEL_PREFIX: 'convo channel*' }),
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('SOCKET_IO_REDIS_CHANNEL_PREFIX');
   });
 
   it('fails fast when object-storage credentials are missing', () => {

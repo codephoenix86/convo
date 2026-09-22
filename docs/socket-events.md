@@ -2,6 +2,8 @@
 
 Connect with `auth: { token: accessToken }`. The server authenticates before connection and derives the user from the token; clients never submit a trusted `userId`. Wait for `session:ready` before emitting application events.
 
+Room broadcasts use Socket.IO's sharded Redis adapter and reach clients connected to other API instances. If the adapter is unavailable, namespace connection fails with `CONNECTION_UNAVAILABLE`; connected clients are disconnected when adapter availability is lost so delivery never silently falls back to one instance. Reconnect with normal Socket.IO backoff and perform the `session:ready` resynchronization below after service recovers.
+
 Every client command should include an acknowledgement callback. Success uses `{ ok: true, data: ... }`; failure uses `{ ok: false, error: { code, message, details? } }`. Validation and authorization run for each event even after room restoration.
 
 ## Client-to-server commands

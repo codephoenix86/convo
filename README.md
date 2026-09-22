@@ -1,8 +1,8 @@
 # Convo Chat Backend
 
-A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, Prisma, and Redis. A Socket.IO adapter remains the final step for cross-instance event delivery.
+A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, Prisma, and Redis. Redis coordinates ephemeral state, shared rate limits, and cross-instance Socket.IO delivery.
 
-Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Milestone F adds production packaging and Redis-backed ephemeral coordination.
+Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Milestone F adds production packaging, Redis-backed coordination, and horizontal realtime delivery.
 
 ## Documentation
 
@@ -18,6 +18,7 @@ Milestones A–E provide the application foundation, authenticated REST and real
 - Node.js 24 LTS
 - npm 11 or later
 - PostgreSQL 18 or another Prisma-supported PostgreSQL release
+- Redis 7 or later
 - Local disk space, or an S3-compatible object-storage bucket
 
 ## Local setup
@@ -100,7 +101,7 @@ Set `DEMO_BASE_URL` to target another API origin, for example `DEMO_BASE_URL=htt
 | Method | Path                                 | Purpose                                                |
 | ------ | ------------------------------------ | ------------------------------------------------------ |
 | GET    | `/health`                            | Process liveness; does not query dependencies.         |
-| GET    | `/ready`                             | PostgreSQL/Redis readiness; `503` if either is down.   |
+| GET    | `/ready`                             | PostgreSQL/Redis/Socket adapter readiness.             |
 | POST   | `/auth/register`                     | Create a user and authenticated refresh session.       |
 | POST   | `/auth/login`                        | Authenticate by email/username and create a session.   |
 | POST   | `/auth/refresh`                      | Rotate a refresh token and issue a new token pair.     |
@@ -147,6 +148,8 @@ Changing the driver affects new lookups immediately. If attachments already exis
 ## Socket.IO connections
 
 Socket clients authenticate during the connection handshake by providing the access token as `auth.token`. Invalid or missing tokens are rejected before the socket can run application handlers. Each authenticated connection joins a private `user:<userId>` room and server-derived `conversation:<conversationId>` rooms loaded from PostgreSQL. Clients cannot select their own rooms; successful conversation and membership writes synchronize room access for every connected device.
+
+The sharded Socket.IO Redis adapter publishes room events across API instances through dedicated publisher/subscriber connections. Redis 7 or later is required. If either adapter connection becomes unavailable, `/ready` returns `503`, existing local sockets are disconnected, and new namespace connections are rejected until both connections recover; clients then use the normal reconnect and REST resynchronization flow. A multi-instance load balancer must use sticky sessions while Socket.IO long-polling remains enabled. Keep Redis on a trusted private network and use authenticated TLS (`rediss://`) when the provider supports it.
 
 An authenticated client sends `message:send` with `{ conversationId, clientMessageId, body, replyToId? }` and an acknowledgement callback. Success acknowledgements use `{ ok: true, data: { message, created } }`; rejected events use `{ ok: false, error: { code, message, details? } }`. A newly persisted message is broadcast as `message:new` with `{ message }`. Authorization is checked again for every send even though the socket initially joined authorized rooms.
 
@@ -204,6 +207,7 @@ Database-backed tests are intentionally separate from the fast default suite. Cr
 | `REDIS_CONNECT_TIMEOUT_MS`            | Redis connection timeout from 100–30000ms.                  |
 | `REDIS_COMMAND_TIMEOUT_MS`            | Redis command timeout from 100–30000ms.                     |
 | `REDIS_RECONNECT_MAX_DELAY_MS`        | Maximum Redis reconnect delay from 100–30000ms.             |
+| `SOCKET_IO_REDIS_CHANNEL_PREFIX`      | Isolates this deployment's Socket.IO Pub/Sub channels.      |
 | `ACCESS_TOKEN_SECRET`                 | Secret of at least 32 characters for JWTs.                  |
 | `ACCESS_TOKEN_TTL_SECONDS`            | Access-token lifetime from 60–3600 seconds.                 |
 | `REFRESH_TOKEN_TTL_DAYS`              | Refresh-session lifetime from 1–90 days.                    |
@@ -258,6 +262,7 @@ The `OBJECT_STORAGE_*` region, bucket, and credential variables are required onl
 - Conversation room access is rebuilt from persisted memberships and updated after successful direct/group membership writes.
 - Message sends use one transport-independent service for validation, authorization, idempotent persistence, and `message:new` publication; retries are not rebroadcast.
 - Every connection emits `session:ready` after authentication and room restoration so clients can resynchronize missed durable state through REST.
-- Redis reconnects with capped exponential backoff, rejects commands while offline, and makes `/ready` unavailable until a `PING` succeeds.
-- `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect Redis and Prisma, and exit cleanly.
+- The sharded Redis adapter carries Socket.IO room broadcasts between instances; adapter loss disconnects local sockets and rejects new connections until cross-instance delivery is restored.
+- Redis reconnects with capped exponential backoff, rejects commands while offline, and makes `/ready` unavailable until command and adapter connections recover.
+- `SIGINT` and `SIGTERM` close Socket.IO and the HTTP server, disconnect all Redis clients and Prisma, and exit cleanly.
 - Shutdown is forcefully terminated after ten seconds if resources cannot close.

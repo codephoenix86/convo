@@ -14,6 +14,7 @@ import { createConversationRoomCoordinator } from './realtime/conversation-rooms
 import { createRealtimeMessageEvents } from './realtime/message-events.js';
 import { createRedisPresenceCoordinator } from './realtime/redis-presence.js';
 import { createRedisTypingCoordinator } from './realtime/redis-typing.js';
+import { createSocketRedisAdapter } from './realtime/socket-redis-adapter.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -28,12 +29,18 @@ const presenceCoordinator = createRedisPresenceCoordinator({
   membershipRepository: conversationsRepository,
 });
 const typingCoordinator = createRedisTypingCoordinator({ redisClient: redis });
+const socketRedisAdapter = createSocketRedisAdapter({ redisClient: redis });
 const messages = createMessagesService({
   repository: messagesRepository,
   accessRepository: conversationsRepository,
   messageEvents,
 });
-const app = createApp({ conversations, messages, rateLimiters });
+const app = createApp({
+  conversations,
+  messages,
+  rateLimiters,
+  socketAdapter: socketRedisAdapter,
+});
 const server = createServer(app);
 const io = createSocketServer(server, {
   roomCoordinator: conversationRooms,
@@ -41,7 +48,9 @@ const io = createSocketServer(server, {
   typingCoordinator,
   messageSendRateLimiter: rateLimiters.messageSend,
   messages,
+  socketAdapter: socketRedisAdapter,
 });
+socketRedisAdapter.attach(io);
 messageEvents.attach(io);
 
 let shutdownPromise;
@@ -50,6 +59,19 @@ const redisConnectionPromise = connectRedisClient(redis).catch((error) => {
     logger.error(
       { err: error, dependency: 'redis', event: 'redis_connection_failed', status: 'unavailable' },
       'Redis connection failed',
+    );
+  }
+});
+const socketAdapterConnectionPromise = socketRedisAdapter.connect().catch((error) => {
+  if (!shutdownPromise) {
+    logger.error(
+      {
+        err: error,
+        dependency: 'redis',
+        event: 'socket_adapter_connection_failed',
+        status: 'unavailable',
+      },
+      'Socket.IO Redis adapter connection failed',
     );
   }
 });
@@ -112,6 +134,8 @@ async function shutdown(reason, exitCode) {
   try {
     await closeSocketServer();
     await closeHttpServer();
+    await socketRedisAdapter.close();
+    await socketAdapterConnectionPromise;
     await closeRedisClient(redis);
     await redisConnectionPromise;
     await db.$disconnect();
