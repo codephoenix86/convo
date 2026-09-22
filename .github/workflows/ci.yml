@@ -69,7 +69,7 @@ jobs:
       REDIS_CONNECT_TIMEOUT_MS: '5000'
       REDIS_COMMAND_TIMEOUT_MS: '2000'
       REDIS_RECONNECT_MAX_DELAY_MS: '3000'
-      SOCKET_IO_REDIS_CHANNEL_PREFIX: convo:socket.io
+      SOCKET_IO_REDIS_CHANNEL_PREFIX: convo:socket-io
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -141,5 +141,8 @@ jobs:
         run: >-
           docker run --rm --entrypoint node convo-chat-backend:ci --input-type=module --eval
           "import argon2 from 'argon2'; import { existsSync } from 'node:fs';
-          if (process.getuid() === 0 || existsSync('/app/node_modules/vitest')) process.exit(1);
+          const migrationRuntimeExists = existsSync('/app/node_modules/prisma/build/index.js') &&
+          existsSync('/app/prisma/schema.prisma') && existsSync('/app/prisma.config.js');
+          if (process.getuid() === 0 || existsSync('/app/node_modules/vitest') || !migrationRuntimeExists)
+          process.exit(1);
           console.log(process.version);"

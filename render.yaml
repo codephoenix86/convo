@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+
+services:
+  - type: keyvalue
+    name: convo-redis
+    region: oregon
+    plan: 256mb
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: off
+
+  - type: web
+    name: convo-api
+    runtime: docker
+    region: oregon
+    plan: 0.5c-512mb
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: checksPass
+    numInstances: 1
+    healthCheckPath: /ready
+    maxShutdownDelaySeconds: 15
+    preDeployCommand: npm run db:migrate:deploy
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY_HOPS
+        value: '1'
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        fromDatabase:
+          name: convo-postgres
+          property: connectionString
+      - key: DATABASE_CONNECTION_TIMEOUT_MS
+        value: '5000'
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: convo-redis
+          property: connectionString
+      - key: REDIS_CONNECT_TIMEOUT_MS
+        value: '5000'
+      - key: REDIS_COMMAND_TIMEOUT_MS
+        value: '2000'
+      - key: REDIS_RECONNECT_MAX_DELAY_MS
+        value: '3000'
+      - key: SOCKET_IO_REDIS_CHANNEL_PREFIX
+        value: convo:socket-io:production
+      - key: ACCESS_TOKEN_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_TTL_SECONDS
+        value: '900'
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: '30'
+      - key: JWT_ISSUER
+        value: convo-api
+      - key: JWT_AUDIENCE
+        value: convo-client
+      - key: CLIENT_ORIGINS
+        sync: false
+      - key: ATTACHMENT_STORAGE_DRIVER
+        value: cloudinary
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_DOWNLOAD_URL_TTL_SECONDS
+        value: '300'
+
+databases:
+  - name: convo-postgres
+    region: oregon
+    plan: 0.1c-256mb
+    postgresMajorVersion: '18'
+    databaseName: convo
+    user: convo
+    ipAllowList: []

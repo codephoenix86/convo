@@ -38,6 +38,8 @@ WORKDIR /app
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=production-dependencies --chown=node:node /app/generated ./generated
 COPY --chown=node:node package.json ./
+COPY --chown=node:node prisma.config.js ./
+COPY --chown=node:node prisma ./prisma
 COPY --chown=node:node src ./src
 
 RUN mkdir -p /app/storage && chown node:node /app/storage

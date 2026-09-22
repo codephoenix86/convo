@@ -67,7 +67,7 @@ describe('environment configuration', () => {
       REDIS_CONNECT_TIMEOUT_MS: 500,
       REDIS_COMMAND_TIMEOUT_MS: 500,
       REDIS_RECONNECT_MAX_DELAY_MS: 500,
-      SOCKET_IO_REDIS_CHANNEL_PREFIX: 'convo:socket.io',
+      SOCKET_IO_REDIS_CHANNEL_PREFIX: 'convo:socket-io',
       ACCESS_TOKEN_TTL_SECONDS: 900,
       REFRESH_TOKEN_TTL_DAYS: 30,
       JWT_ISSUER: 'convo-api-test',

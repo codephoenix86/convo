@@ -90,7 +90,7 @@ const environmentSchema = z
         /^[A-Za-z0-9:_-]+$/,
         'must contain only letters, numbers, colons, underscores, or hyphens',
       )
-      .default('convo:socket.io'),
+      .default('convo:socket-io'),
     ACCESS_TOKEN_SECRET: z
       .string({ error: 'is required' })
       .min(32, 'must contain at least 32 characters'),

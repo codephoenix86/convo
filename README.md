@@ -11,6 +11,7 @@ Milestones A–E provide the application foundation, authenticated REST and real
 - [HTTP API contract and examples](docs/api.md)
 - [Socket.IO event contract](docs/socket-events.md)
 - [Quality, performance, and test evidence](docs/quality.md)
+- [Production deployment and operations](docs/deployment.md)
 - [Engineering decisions and trade-offs](docs/decisions.md)
 
 ## Requirements
@@ -105,6 +106,12 @@ npm run test:scaling
 ```
 
 The command refuses the development database, applies committed migrations to the test database, starts two API processes on separate loopback ports with one isolated Socket.IO channel prefix, and waits for both `/ready` checks. It then creates users through different instances and verifies cross-instance online/offline presence, Redis-adapter message delivery, shared PostgreSQL history, and graceful shutdown. Records are retained only in the disposable test database for inspection.
+
+## Production deployment
+
+[`render.yaml`](render.yaml) defines a production baseline on Render: the Docker API, private managed PostgreSQL, private managed Key Value, a dependency-aware `/ready` health check, generated and prompted secrets, and a pre-deploy migration command. Cloudinary is the configured attachment store because a web-service filesystem is disposable.
+
+Follow the [production deployment runbook](docs/deployment.md) to create the Blueprint, supply secrets and the exact browser-origin allowlist, verify HTTPS/WSS, scale safely, and operate migrations. It also documents the rollback boundary: Render can restore an earlier application image, but it does not reverse database migrations or environment changes.
 
 ## HTTP endpoints
 
