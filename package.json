@@ -18,6 +18,7 @@
     "test:integration": "vitest run tests/integration",
     "test:acceptance": "vitest run tests/realtime/messaging-lifecycle.acceptance.test.js",
     "test:database": "node scripts/run-database-tests.js",
+    "test:scaling": "node scripts/run-scaling-test.js",
     "postinstall": "node --env-file=.env.example --env-file-if-exists=.env ./node_modules/prisma/build/index.js generate",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",

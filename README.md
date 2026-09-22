@@ -96,6 +96,16 @@ npm run demo
 
 Set `DEMO_BASE_URL` to target another API origin, for example `DEMO_BASE_URL=http://127.0.0.1:4000 npm run demo`. Each run creates uniquely named Alice, Bob, and Charlie users, then demonstrates canonical direct-conversation reuse, a rejected group-role mutation, direct and group realtime sends/acknowledgements, a persisted read receipt, cross-transport message idempotency, reconnect room restoration, and REST recovery of a message missed while offline. Successful output ends with `Demo completed successfully.` The records are intentionally retained for inspection; use a disposable database when repeatable cleanup is important.
 
+### Two-instance scaling proof
+
+With Redis running and `TEST_DATABASE_URL` pointing to a disposable PostgreSQL database whose name ends in `_test`, run:
+
+```bash
+npm run test:scaling
+```
+
+The command refuses the development database, applies committed migrations to the test database, starts two API processes on separate loopback ports with one isolated Socket.IO channel prefix, and waits for both `/ready` checks. It then creates users through different instances and verifies cross-instance online/offline presence, Redis-adapter message delivery, shared PostgreSQL history, and graceful shutdown. Records are retained only in the disposable test database for inspection.
+
 ## HTTP endpoints
 
 | Method | Path                                 | Purpose                                                |
@@ -179,6 +189,7 @@ Socket events are live notifications, not a durable replay log. Whenever `sessio
 | `npm run test:integration`  | Run HTTP, configuration, and lifecycle contract tests. |
 | `npm run test:acceptance`   | Run the realtime messaging lifecycle acceptance flow.  |
 | `npm run test:database`     | Migrate and test against an isolated PostgreSQL DB.    |
+| `npm run test:scaling`      | Run the real two-instance Redis/PostgreSQL proof.      |
 | `npm run lint`              | Check JavaScript with ESLint.                          |
 | `npm run format:check`      | Check formatting with Prettier.                        |
 | `npm run db:generate`       | Regenerate Prisma Client.                              |

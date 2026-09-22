@@ -101,6 +101,9 @@ jobs:
       - name: Run migrations and database tests
         run: npm run test:database
 
+      - name: Run two-instance scaling proof
+        run: npm run test:scaling
+
   container:
     name: Production container
     runs-on: ubuntu-latest

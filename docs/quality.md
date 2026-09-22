@@ -13,12 +13,13 @@ Milestone E turns the backend's security and correctness claims into executable 
 | `npm test`                 | Unit, integration, and Socket.IO suites.                               |
 | `npm run test:acceptance`  | One complete realtime messaging lifecycle.                             |
 | `npm run test:database`    | Migrations plus PostgreSQL constraints, transactions, and query plans. |
+| `npm run test:scaling`     | Two API processes sharing PostgreSQL and Redis on separate ports.      |
 
 Database tests require `TEST_DATABASE_URL` to identify a disposable database whose name ends in `_test`. The runner rejects the normal `DATABASE_URL`, deploys committed migrations, and clears only the isolated test database between cases.
 
 ## Continuous integration
 
-GitHub Actions runs the complete release gate on pull requests, pushes to `main`, and manual dispatches. The quality job installs exactly `package-lock.json`, checks formatting and lint, validates the Prisma schema, runs the default test suite, then deploys all migrations into an isolated PostgreSQL 18 service before running database-backed constraints, transactions, authorization, pagination, and query-plan tests. A Redis service supplies production-shaped dependency configuration. Focused tests verify adapter client separation, installation, readiness transitions, fail-closed socket behavior, and shutdown; the two-instance delivery proof is kept as a separate release step.
+GitHub Actions runs the complete release gate on pull requests, pushes to `main`, and manual dispatches. The quality job installs exactly `package-lock.json`, checks formatting and lint, validates the Prisma schema, runs the default test suite, then deploys all migrations into an isolated PostgreSQL 18 service before running database-backed constraints, transactions, authorization, pagination, and query-plan tests. A Redis service supplies production-shaped dependency configuration. Focused tests verify adapter client separation, installation, readiness transitions, fail-closed socket behavior, and shutdown. The final scaling step starts two real API processes on separate ports and proves cross-instance presence, message delivery, shared persistence, and graceful shutdown against the CI PostgreSQL and Redis services.
 
 The container job runs only after application and database checks pass. It validates the Compose model and Dockerfile, builds the production target, and verifies that the image runs as a non-root user, loads the native Argon2 dependency, and excludes Vitest. BuildKit caches image layers, while `setup-node` caches npm's download cache by lockfile; neither job caches `node_modules` or build output.
 
@@ -70,3 +71,5 @@ Express trusts no proxy by default. Set `TRUST_PROXY_HOPS` to the exact number o
 ## Manual demo
 
 With a migrated API running, execute `npm run demo`. The script creates uniquely named users and demonstrates direct-conversation reuse, group-role rejection, direct/group realtime sends and acknowledgements, read receipts, cross-transport idempotency, reconnect room restoration, and REST history recovery. See the root README for configuration and expected output.
+
+For horizontal-scaling evidence, set `TEST_DATABASE_URL` to a disposable `_test` database, start Redis, and execute `npm run test:scaling`. The guarded runner applies migrations, starts two API instances, waits for full readiness, proves Redis-adapter delivery and presence transitions in both directions, verifies the message through the other instance's REST history, and terminates both processes. This command is also enforced by CI.

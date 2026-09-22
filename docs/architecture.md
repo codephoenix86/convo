@@ -36,6 +36,8 @@ PostgreSQL is the durable source of truth for users, refresh sessions, conversat
 
 Typing, presence connection counts, and fixed-window rate-limit counters use Redis so API instances agree on ephemeral state. Presence heartbeats and typing entries have bounded TTLs, making process crashes self-healing. Auth endpoints use client-IP budgets, authenticated operations use user budgets, and REST/Socket.IO message sends share one atomic limiter. Dedicated Redis publisher/subscriber connections run Socket.IO's sharded adapter so room broadcasts reach sockets on every API instance. Redis or adapter failure makes readiness unavailable, rejects new socket connections, disconnects existing local sockets, and makes state-dependent operations fail closed. PostgreSQL remains the source of truth for memberships and every durable chat record, so reconnecting clients recover through REST.
 
+`npm run test:scaling` makes this topology executable: it starts two API processes on separate ports against one disposable PostgreSQL database and one Redis service, then verifies cross-instance presence, room delivery, persisted history, and graceful shutdown.
+
 Attachment storage is selected with `ATTACHMENT_STORAGE_DRIVER`. With `s3`, bytes travel directly between the client and a private S3-compatible bucket. With `cloudinary`, the client uses a signed multipart upload and assets use authenticated delivery. With `local`, signed endpoints send bytes through the API to persistent disk. All drivers expose the same upload-contract, inspect, and download-contract interface; uploaded metadata is verified before message creation, while searchable attachment metadata remains provider-neutral in PostgreSQL.
 
 ## Module boundaries
