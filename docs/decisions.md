@@ -27,3 +27,9 @@ Presence heartbeats, multi-device connection counts, typing TTLs, broadcast debo
 Authentication attempts use client-IP budgets because no verified user exists yet; authenticated searches, sends, and upload initialization use the verified user ID so reconnecting or opening another tab does not reset a budget. Message sends deliberately share one limiter across REST and Socket.IO. This prevents transport switching from bypassing protection while keeping policy outside the message service.
 
 The production implementation uses atomic Redis fixed-window counters, so all API instances enforce one budget and Redis failure cannot silently bypass protection. An in-memory implementation remains available as an injected test double. `TRUST_PROXY_HOPS` defaults to zero and must match the exact trusted proxy chain before forwarded client addresses are accepted for IP-keyed limits.
+
+## 7. Releases separate repeatable evidence from provider state
+
+`npm run test:release` composes static checks, behavior suites, real PostgreSQL/Redis proofs, and a production image build into one local decision. CI keeps application/database work separate from the dependent container job so failures remain diagnosable. The gate is deliberately strict about test-database naming and never deploys, seeds production, or publishes an image.
+
+A passing local/CI gate cannot prove public DNS, TLS termination, provider secrets, browser-origin policy, or WSS routing. Those remain explicit post-deploy checks in the release and deployment runbooks. This boundary avoids claiming a live production result from repository-only evidence while still making everything under source control reproducible.

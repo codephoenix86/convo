@@ -2,7 +2,7 @@
 
 A production-minded real-time chat backend built as a modular monolith with Node.js, Express, Socket.IO, PostgreSQL, Prisma, and Redis. Redis coordinates ephemeral state, shared rate limits, and cross-instance Socket.IO delivery.
 
-Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Milestone F adds production packaging, Redis-backed coordination, and horizontal realtime delivery.
+Milestones A–E provide the application foundation, authenticated REST and realtime chat, reconnect synchronization, read/delivery state, typing, multi-device presence, sender-owned message mutations, private local/S3-compatible/Cloudinary attachments, and executable quality and performance evidence. Milestone F adds production packaging and deployment configuration, Redis-backed coordination, horizontal realtime delivery, and a reproducible release gate.
 
 ## Documentation
 
@@ -12,6 +12,7 @@ Milestones A–E provide the application foundation, authenticated REST and real
 - [Socket.IO event contract](docs/socket-events.md)
 - [Quality, performance, and test evidence](docs/quality.md)
 - [Production deployment and operations](docs/deployment.md)
+- [Release acceptance and portfolio evidence](docs/release.md)
 - [Engineering decisions and trade-offs](docs/decisions.md)
 
 ## Requirements
@@ -113,6 +114,16 @@ The command refuses the development database, applies committed migrations to th
 
 Follow the [production deployment runbook](docs/deployment.md) to create the Blueprint, supply secrets and the exact browser-origin allowlist, verify HTTPS/WSS, scale safely, and operate migrations. It also documents the rollback boundary: Render can restore an earlier application image, but it does not reverse database migrations or environment changes.
 
+## Release gate
+
+With Docker, Redis, and a disposable `_test` PostgreSQL database available, run the complete local release gate:
+
+```bash
+npm run test:release
+```
+
+It runs formatting, lint, schema, application, database, and two-instance checks before validating and building the production container. See [release acceptance](docs/release.md) for the evidence mapped to every final capability and the separate public HTTPS/WSS checks. A local pass proves release readiness; a live deployment is production-proven only after those external checks pass.
+
 ## HTTP endpoints
 
 | Method | Path                                 | Purpose                                                |
@@ -197,6 +208,7 @@ Socket events are live notifications, not a durable replay log. Whenever `sessio
 | `npm run test:acceptance`   | Run the realtime messaging lifecycle acceptance flow.  |
 | `npm run test:database`     | Migrate and test against an isolated PostgreSQL DB.    |
 | `npm run test:scaling`      | Run the real two-instance Redis/PostgreSQL proof.      |
+| `npm run test:release`      | Run the complete local production release gate.        |
 | `npm run lint`              | Check JavaScript with ESLint.                          |
 | `npm run format:check`      | Check formatting with Prettier.                        |
 | `npm run db:generate`       | Regenerate Prisma Client.                              |
