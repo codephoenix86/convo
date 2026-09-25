@@ -4,17 +4,18 @@ Milestone E turns the backend's security and correctness claims into executable 
 
 ## Verification commands
 
-| Command                    | Scope                                                                  |
-| -------------------------- | ---------------------------------------------------------------------- |
-| `npm run lint`             | JavaScript static analysis.                                            |
-| `npm run format:check`     | Repository formatting.                                                 |
-| `npm run test:unit`        | Services, utilities, storage adapters, tokens, and ephemeral state.    |
-| `npm run test:integration` | HTTP contracts, middleware ordering, authorization, and rate limits.   |
-| `npm test`                 | Unit, integration, and Socket.IO suites.                               |
-| `npm run test:acceptance`  | One complete realtime messaging lifecycle.                             |
-| `npm run test:database`    | Migrations plus PostgreSQL constraints, transactions, and query plans. |
-| `npm run test:scaling`     | Two API processes sharing PostgreSQL and Redis on separate ports.      |
-| `npm run test:release`     | Every local quality, database, scaling, Compose, and image check.      |
+| Command                             | Scope                                                                  |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `npm run lint`                      | JavaScript static analysis.                                            |
+| `npm run format:check`              | Repository formatting.                                                 |
+| `npm run test:unit`                 | Services, utilities, storage adapters, tokens, and ephemeral state.    |
+| `npm run test:integration`          | HTTP contracts, middleware ordering, authorization, and rate limits.   |
+| `npm test`                          | Unit, integration, and Socket.IO suites.                               |
+| `npm run test:acceptance`           | One complete realtime messaging lifecycle.                             |
+| `npm run test:database`             | Migrations plus PostgreSQL constraints, transactions, and query plans. |
+| `npm run test:scaling`              | Two API processes sharing PostgreSQL and Redis on separate ports.      |
+| `npm run test:release`              | Every local quality, database, scaling, Compose, and image check.      |
+| `npm run benchmark:message-latency` | Environment-specific sender-to-recipient latency baseline.             |
 
 Database tests require `TEST_DATABASE_URL` to identify a disposable database whose name ends in `_test`. The runner rejects the normal `DATABASE_URL`, deploys committed migrations, and clears only the isolated test database between cases.
 
@@ -51,6 +52,18 @@ The suite also runs `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` against representa
 | `messages_sender_conversation_client_id_key` | Idempotent lookup by sender, conversation, and client message. |
 
 These checks prove the intended PostgreSQL access paths are usable on a realistic test fixture. They deliberately avoid publishing machine-specific latency claims as universal benchmarks.
+
+## Message delivery latency baseline
+
+Run `npm run benchmark:message-latency` against a migrated, running API. The benchmark creates one sender, one recipient, and one direct conversation, waits for both WebSocket sessions to become ready, discards warm-up sends, and then measures message delivery. Setup and warm-up time are excluded.
+
+For each sample, the same benchmark process reads a monotonic clock immediately before emitting `message:send` and again when the recipient receives the matching `message:new` event. This interval includes transport to the API, authorization and rate limiting, PostgreSQL persistence, the Socket.IO room broadcast, and transport to the recipient. The sender acknowledgement is validated alongside the recipient event but does not end the timer. Matching uses the unique `clientMessageId`, and the canonical message IDs in the acknowledgement and event must agree.
+
+Results use the nearest-rank method over sorted samples and include p50, p95, p99, minimum, maximum, and throughput. Defaults are 10 excluded warm-up samples, 100 measured samples, WebSocket transport, a five-second per-operation timeout, and one in-flight send. The total is capped at 120 sends to respect the default per-user rate limit. Override the target and run sizes with `MESSAGE_LATENCY_BASE_URL`, `MESSAGE_LATENCY_SAMPLES`, `MESSAGE_LATENCY_WARMUP_SAMPLES`, and `MESSAGE_LATENCY_TIMEOUT_MS`.
+
+`MESSAGE_LATENCY_IN_FLIGHT` controls the maximum number of outstanding sends on the one sender socket. A fixed-size worker pool starts the next send as soon as one finishes, without batch barriers, and a single recipient-side dispatcher matches concurrent deliveries by `clientMessageId`. The setting defaults to `1` and cannot exceed the measured sample count. It does not create additional users or socket clients.
+
+These results describe only the target, network path, host load, database, and Redis conditions during that run. They must not be treated as a capacity result or a stable CI threshold. A statistically stronger p99 or load test requires many more samples, controlled concurrency, and a purpose-built rate-limit policy.
 
 ## Rate-limit policy
 

@@ -63,6 +63,8 @@ describe('environment configuration', () => {
       TRUST_PROXY_HOPS: 0,
       LOG_LEVEL: 'silent',
       DATABASE_CONNECTION_TIMEOUT_MS: 500,
+      DATABASE_POOL_MAX: 4,
+      DATABASE_SLOW_QUERY_MS: 0,
       REDIS_URL: 'redis://localhost:6379',
       REDIS_CONNECT_TIMEOUT_MS: 500,
       REDIS_COMMAND_TIMEOUT_MS: 500,
@@ -118,6 +120,27 @@ describe('environment configuration', () => {
     expect(JSON.parse(valid.stdout).TRUST_PROXY_HOPS).toBe(1);
     expect(invalid.status).not.toBe(0);
     expect(invalid.stderr).toContain('TRUST_PROXY_HOPS');
+  });
+
+  it('validates database pool and slow-query settings', () => {
+    const valid = runEnvironmentImport(
+      createEnvironment({ DATABASE_POOL_MAX: '8', DATABASE_SLOW_QUERY_MS: '25' }),
+      true,
+    );
+    const invalidPool = runEnvironmentImport(createEnvironment({ DATABASE_POOL_MAX: '0' }));
+    const invalidThreshold = runEnvironmentImport(
+      createEnvironment({ DATABASE_SLOW_QUERY_MS: '-1' }),
+    );
+
+    expect(valid.status).toBe(0);
+    expect(JSON.parse(valid.stdout)).toMatchObject({
+      DATABASE_POOL_MAX: 8,
+      DATABASE_SLOW_QUERY_MS: 25,
+    });
+    expect(invalidPool.status).not.toBe(0);
+    expect(invalidPool.stderr).toContain('DATABASE_POOL_MAX');
+    expect(invalidThreshold.status).not.toBe(0);
+    expect(invalidThreshold.stderr).toContain('DATABASE_SLOW_QUERY_MS');
   });
 
   it('rejects invalid client origins', () => {
@@ -232,6 +255,8 @@ function createEnvironment(overrides = {}) {
     PORT: '3001',
     LOG_LEVEL: 'silent',
     DATABASE_CONNECTION_TIMEOUT_MS: '500',
+    DATABASE_POOL_MAX: '4',
+    DATABASE_SLOW_QUERY_MS: '0',
     REDIS_URL: 'redis://localhost:6379',
     REDIS_CONNECT_TIMEOUT_MS: '500',
     REDIS_COMMAND_TIMEOUT_MS: '500',

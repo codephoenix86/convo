@@ -44,14 +44,18 @@ export function createMessagesService({
   return {
     async send(userId, input) {
       const command = parseSendMessageCommand(input);
-      const context = await accessRepository.findAccessContext(command.conversationId, [userId]);
-      requireConversationMember(context, userId);
+      const attachmentReferences = command.attachments ?? [];
+
+      if (attachmentReferences.length > 0) {
+        const context = await accessRepository.findAccessContext(command.conversationId, [userId]);
+        requireConversationMember(context, userId);
+      }
 
       const attachments = await validateUploadedAttachments({
         storage,
         userId,
         conversationId: command.conversationId,
-        references: command.attachments ?? [],
+        references: attachmentReferences,
       });
 
       const createInput = {

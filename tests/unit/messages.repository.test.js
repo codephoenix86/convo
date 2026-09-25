@@ -12,13 +12,55 @@ const messageId = randomUUID();
 const createdAt = new Date('2026-09-02T10:00:00.000Z');
 const storedMessage = { id: messageId, conversationId, senderId: userId, createdAt };
 
+function textMessageRow(overrides = {}) {
+  return {
+    id: messageId,
+    conversationId,
+    senderId: userId,
+    clientMessageId,
+    body: 'Hello',
+    type: 'TEXT',
+    replyToId: null,
+    createdAt,
+    updatedAt: createdAt,
+    editedAt: null,
+    deletedAt: null,
+    senderUsername: 'alice',
+    senderAvatarUrl: null,
+    created: true,
+    ...overrides,
+  };
+}
+
+function createAttachmentDatabase({
+  memberships = [{ conversationId }],
+  createResult = storedMessage,
+  createError,
+  existingMessage,
+} = {}) {
+  const update = vi.fn();
+
+  if (createError) {
+    update.mockRejectedValue(createError);
+  } else {
+    update.mockResolvedValue({ messages: [createResult] });
+  }
+
+  const transaction = {
+    $queryRaw: vi.fn().mockResolvedValue(memberships),
+    conversation: { update },
+  };
+  const database = {
+    $transaction: vi.fn((operation) => operation(transaction)),
+    message: { findFirst: vi.fn().mockResolvedValue(existingMessage) },
+  };
+
+  return { database, transaction };
+}
+
 describe('messages repository', () => {
-  it('creates a message and bumps inbox ordering only for a current member', async () => {
-    const database = {
-      conversation: {
-        update: vi.fn().mockResolvedValue({ messages: [storedMessage] }),
-      },
-    };
+  it('creates an attachment-free message with one atomic database statement', async () => {
+    const database = { $queryRaw: vi.fn().mockResolvedValue([textMessageRow()]) };
     const repository = createMessagesRepository(database);
 
     const result = await repository.create({
@@ -29,30 +71,43 @@ describe('messages repository', () => {
       replyToId: null,
     });
 
-    expect(database.conversation.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: conversationId, members: { some: { userId } } },
-        data: expect.objectContaining({
-          updatedAt: expect.any(Date),
-          messages: {
-            create: {
-              senderId: userId,
-              clientMessageId,
-              body: 'Hello',
-              type: 'TEXT',
-              replyToId: null,
-            },
-          },
-        }),
-      }),
+    expect(database.$queryRaw).toHaveBeenCalledOnce();
+    const [query, ...parameters] = database.$queryRaw.mock.calls[0];
+    const sql = query.join(' ');
+    expect(sql).toContain('FOR KEY SHARE');
+    expect(sql).toContain('ON CONFLICT');
+    expect(sql).toContain('INSERT INTO "public"."messages"');
+    expect(sql).toContain('UPDATE "public"."conversations"');
+    expect(sql).toContain('"canonical_message"."id" =');
+    expect(sql).not.toContain('"attachments"');
+    expect(parameters).toEqual(
+      expect.arrayContaining([conversationId, userId, clientMessageId, 'Hello', null]),
     );
-    expect(result).toEqual({ message: storedMessage, created: true });
+    expect(result).toEqual({
+      message: {
+        id: messageId,
+        conversationId,
+        senderId: userId,
+        clientMessageId,
+        body: 'Hello',
+        type: 'TEXT',
+        replyToId: null,
+        createdAt,
+        updatedAt: createdAt,
+        editedAt: null,
+        deletedAt: null,
+        sender: { id: userId, username: 'alice', avatarUrl: null },
+        attachments: [],
+      },
+      created: true,
+    });
   });
 
-  it('returns the existing canonical message after an idempotent retry', async () => {
+  it('returns the existing canonical text message after an idempotent retry', async () => {
     const database = {
-      conversation: { update: vi.fn().mockRejectedValue({ code: 'P2002' }) },
-      message: { findFirst: vi.fn().mockResolvedValue(storedMessage) },
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([textMessageRow({ body: 'Original body', created: false })]),
     };
     const repository = createMessagesRepository(database);
 
@@ -64,17 +119,41 @@ describe('messages repository', () => {
       replyToId: null,
     });
 
-    expect(database.message.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          conversationId,
-          senderId: userId,
-          clientMessageId,
-          conversation: { members: { some: { userId } } },
-        },
-      }),
+    expect(result.created).toBe(false);
+    expect(result.message.body).toBe('Original body');
+  });
+
+  it('rejects an attachment-free send when the sender is not a current member', async () => {
+    const database = { $queryRaw: vi.fn().mockResolvedValue([]) };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.create({ conversationId, senderId: userId, clientMessageId, body: 'Hi' }),
+    ).rejects.toEqual(
+      expect.objectContaining({ name: NotFoundError.name, message: 'Conversation not found' }),
     );
-    expect(result).toEqual({ message: storedMessage, created: false });
+  });
+
+  it('maps a raw-query reply foreign-key failure to not found', async () => {
+    const database = {
+      $queryRaw: vi.fn().mockRejectedValue({
+        code: 'P2010',
+        meta: { driverAdapterError: { cause: { originalCode: '23503' } } },
+      }),
+    };
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.create({
+        conversationId,
+        senderId: userId,
+        clientMessageId,
+        body: 'Reply',
+        replyToId: randomUUID(),
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({ name: NotFoundError.name, message: 'Reply message not found' }),
+    );
   });
 
   it('creates attachment rows atomically with their message', async () => {
@@ -85,9 +164,7 @@ describe('messages repository', () => {
       width: 640,
       height: 480,
     };
-    const database = {
-      conversation: { update: vi.fn().mockResolvedValue({ messages: [storedMessage] }) },
-    };
+    const { database, transaction } = createAttachmentDatabase();
     const repository = createMessagesRepository(database);
 
     await repository.create({
@@ -99,9 +176,13 @@ describe('messages repository', () => {
       attachments: [attachment],
     });
 
-    expect(database.conversation.update).toHaveBeenCalledWith(
+    expect(transaction.$queryRaw).toHaveBeenCalledOnce();
+    expect(transaction.$queryRaw.mock.calls[0][0].join(' ')).toContain('FOR KEY SHARE');
+    expect(transaction.conversation.update).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: conversationId },
         data: expect.objectContaining({
+          updatedAt: expect.any(Date),
           messages: {
             create: {
               senderId: userId,
@@ -117,11 +198,26 @@ describe('messages repository', () => {
     );
   });
 
+  it('returns an existing attachment message after an idempotent retry', async () => {
+    const { database } = createAttachmentDatabase({
+      createError: { code: 'P2002' },
+      existingMessage: storedMessage,
+    });
+    const repository = createMessagesRepository(database);
+
+    await expect(
+      repository.create({
+        conversationId,
+        senderId: userId,
+        clientMessageId,
+        body: 'Retry',
+        attachments: [{ storageKey: 'key' }],
+      }),
+    ).resolves.toEqual({ message: storedMessage, created: false });
+  });
+
   it('maps reuse of an attachment by another message to a conflict', async () => {
-    const database = {
-      conversation: { update: vi.fn().mockRejectedValue({ code: 'P2002' }) },
-      message: { findFirst: vi.fn().mockResolvedValue(null) },
-    };
+    const { database } = createAttachmentDatabase({ createError: { code: 'P2002' } });
     const repository = createMessagesRepository(database);
 
     await expect(
@@ -130,6 +226,7 @@ describe('messages repository', () => {
         senderId: userId,
         clientMessageId,
         body: 'Duplicate attachment',
+        attachments: [{ storageKey: 'reused-key' }],
       }),
     ).rejects.toEqual(
       expect.objectContaining({
@@ -137,17 +234,6 @@ describe('messages repository', () => {
         message: 'An attachment has already been used',
       }),
     );
-  });
-
-  it('maps membership/unknown conversation failure without leaking existence', async () => {
-    const database = {
-      conversation: { update: vi.fn().mockRejectedValue({ code: 'P2025' }) },
-    };
-    const repository = createMessagesRepository(database);
-
-    await expect(
-      repository.create({ conversationId, senderId: userId, clientMessageId, body: 'Hi' }),
-    ).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('uses the compound history order, membership predicate, and one lookahead row', async () => {

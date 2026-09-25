@@ -90,6 +90,7 @@ describe('messages service', () => {
       body: 'Hello',
       replyToId: null,
     });
+    expect(fixture.accessRepository.findAccessContext).not.toHaveBeenCalled();
     expect(fixture.messageEvents.messageCreated).toHaveBeenCalledWith({
       message: result.message,
     });
@@ -149,6 +150,9 @@ describe('messages service', () => {
     });
 
     expect(fixture.storage.inspectObject).toHaveBeenCalledWith(storageKey);
+    expect(fixture.accessRepository.findAccessContext).toHaveBeenCalledWith(conversationId, [
+      userId,
+    ]);
     expect(fixture.repository.create).toHaveBeenCalledWith({
       conversationId,
       senderId: userId,
@@ -283,8 +287,9 @@ describe('messages service', () => {
     expect(fixture.messageEvents.messageCreated).not.toHaveBeenCalled();
   });
 
-  it('denies creation and history to nonmembers before message queries', async () => {
+  it('delegates text-message authorization to persistence and denies nonmember history', async () => {
     const fixture = createFixture({ id: conversationId, type: 'DIRECT', members: [] });
+    fixture.repository.create.mockRejectedValueOnce(new NotFoundError('Conversation not found'));
 
     await expect(
       fixture.service.send(userId, { conversationId, clientMessageId, body: 'Hello' }),
@@ -292,9 +297,25 @@ describe('messages service', () => {
     await expect(
       fixture.service.listHistory(userId, conversationId, { limit: 30 }),
     ).rejects.toBeInstanceOf(NotFoundError);
-    expect(fixture.repository.create).not.toHaveBeenCalled();
+    expect(fixture.repository.create).toHaveBeenCalledOnce();
     expect(fixture.repository.listHistory).not.toHaveBeenCalled();
     expect(fixture.messageEvents.messageCreated).not.toHaveBeenCalled();
+  });
+
+  it('denies nonmember attachment sends before inspecting object storage', async () => {
+    const fixture = createFixture({ id: conversationId, type: 'DIRECT', members: [] });
+    const storageKey = `conversations/${conversationId}/users/${userId}/${randomUUID()}.png`;
+
+    await expect(
+      fixture.service.send(userId, {
+        conversationId,
+        clientMessageId,
+        body: 'Unauthorized attachment',
+        attachments: [{ storageKey }],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(fixture.storage.inspectObject).not.toHaveBeenCalled();
+    expect(fixture.repository.create).not.toHaveBeenCalled();
   });
 
   it('returns deterministic older-message pages and a conversation-bound cursor', async () => {

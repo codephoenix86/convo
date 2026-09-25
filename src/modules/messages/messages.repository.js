@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { db } from '../../config/db.js';
 import { ConflictError, NotFoundError } from '../../lib/errors.js';
 
@@ -50,40 +52,26 @@ export function createMessagesRepository(database = db) {
   return {
     async create({ conversationId, senderId, clientMessageId, body, replyToId, attachments = [] }) {
       try {
-        const result = await database.conversation.update({
-          where: {
-            id: conversationId,
-            members: { some: { userId: senderId } },
-          },
-          data: {
-            updatedAt: new Date(),
-            messages: {
-              create: {
-                senderId,
-                clientMessageId,
-                body,
-                type: 'TEXT',
-                replyToId: replyToId ?? null,
-                ...(attachments.length
-                  ? {
-                      attachments: {
-                        create: attachments,
-                      },
-                    }
-                  : {}),
-              },
-            },
-          },
-          select: {
-            messages: {
-              where: { senderId, clientMessageId },
-              take: 1,
-              select: messageSelect,
-            },
-          },
+        if (attachments.length === 0) {
+          return await createTextMessage(database, {
+            conversationId,
+            senderId,
+            clientMessageId,
+            body,
+            replyToId: replyToId ?? null,
+          });
+        }
+
+        const message = await createAttachmentMessage(database, {
+          conversationId,
+          senderId,
+          clientMessageId,
+          body,
+          replyToId: replyToId ?? null,
+          attachments,
         });
 
-        return { message: result.messages[0], created: true };
+        return { message, created: true };
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           const message = await database.message.findFirst({
@@ -247,6 +235,159 @@ export function createMessagesRepository(database = db) {
   };
 }
 
+async function createTextMessage(
+  database,
+  { conversationId, senderId, clientMessageId, body, replyToId },
+) {
+  const candidateMessageId = randomUUID();
+  const rows = await database.$queryRaw`
+    WITH "authorized_member" AS MATERIALIZED (
+      SELECT "conversation_id"
+      FROM "public"."conversation_members"
+      WHERE "conversation_id" = ${conversationId}::uuid
+        AND "user_id" = ${senderId}::uuid
+      FOR KEY SHARE
+    ),
+    "canonical_message" AS (
+      INSERT INTO "public"."messages" (
+        "id",
+        "conversation_id",
+        "sender_id",
+        "client_message_id",
+        "body",
+        "type",
+        "reply_to_id",
+        "created_at",
+        "updated_at"
+      )
+      SELECT
+        ${candidateMessageId}::uuid,
+        "authorized_member"."conversation_id",
+        ${senderId}::uuid,
+        ${clientMessageId}::uuid,
+        ${body},
+        'TEXT'::"public"."MessageType",
+        ${replyToId}::uuid,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      FROM "authorized_member"
+      ON CONFLICT ("sender_id", "conversation_id", "client_message_id")
+      DO UPDATE SET "client_message_id" = EXCLUDED."client_message_id"
+      RETURNING
+        "id",
+        "conversation_id",
+        "sender_id",
+        "client_message_id",
+        "body",
+        "type",
+        "reply_to_id",
+        "created_at",
+        "updated_at",
+        "edited_at",
+        "deleted_at"
+    ),
+    "bumped_conversation" AS (
+      UPDATE "public"."conversations"
+      SET "updated_at" = "canonical_message"."created_at"
+      FROM "canonical_message"
+      WHERE "conversations"."id" = "canonical_message"."conversation_id"
+        AND "canonical_message"."id" = ${candidateMessageId}::uuid
+      RETURNING "conversations"."id"
+    )
+    SELECT
+      "canonical_message"."id",
+      "canonical_message"."conversation_id" AS "conversationId",
+      "canonical_message"."sender_id" AS "senderId",
+      "canonical_message"."client_message_id" AS "clientMessageId",
+      "canonical_message"."body",
+      "canonical_message"."type"::text AS "type",
+      "canonical_message"."reply_to_id" AS "replyToId",
+      "canonical_message"."created_at" AS "createdAt",
+      "canonical_message"."updated_at" AS "updatedAt",
+      "canonical_message"."edited_at" AS "editedAt",
+      "canonical_message"."deleted_at" AS "deletedAt",
+      "users"."username" AS "senderUsername",
+      "users"."avatar_url" AS "senderAvatarUrl",
+      ("canonical_message"."id" = ${candidateMessageId}::uuid) AS "created"
+    FROM "canonical_message"
+    INNER JOIN "public"."users"
+      ON "users"."id" = "canonical_message"."sender_id"
+  `;
+  const row = rows[0];
+
+  if (!row) {
+    throw new NotFoundError('Conversation not found');
+  }
+
+  return {
+    message: {
+      id: row.id,
+      conversationId: row.conversationId,
+      senderId: row.senderId,
+      clientMessageId: row.clientMessageId,
+      body: row.body,
+      type: row.type,
+      replyToId: row.replyToId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      editedAt: row.editedAt,
+      deletedAt: row.deletedAt,
+      sender: {
+        id: row.senderId,
+        username: row.senderUsername,
+        avatarUrl: row.senderAvatarUrl,
+      },
+      attachments: [],
+    },
+    created: row.created,
+  };
+}
+
+function createAttachmentMessage(
+  database,
+  { conversationId, senderId, clientMessageId, body, replyToId, attachments },
+) {
+  return database.$transaction(async (transaction) => {
+    const memberships = await transaction.$queryRaw`
+      SELECT "conversation_id"
+      FROM "public"."conversation_members"
+      WHERE "conversation_id" = ${conversationId}::uuid
+        AND "user_id" = ${senderId}::uuid
+      FOR KEY SHARE
+    `;
+
+    if (memberships.length === 0) {
+      throw new NotFoundError('Conversation not found');
+    }
+
+    const result = await transaction.conversation.update({
+      where: { id: conversationId },
+      data: {
+        updatedAt: new Date(),
+        messages: {
+          create: {
+            senderId,
+            clientMessageId,
+            body,
+            type: 'TEXT',
+            replyToId,
+            attachments: { create: attachments },
+          },
+        },
+      },
+      select: {
+        messages: {
+          where: { senderId, clientMessageId },
+          take: 1,
+          select: messageSelect,
+        },
+      },
+    });
+
+    return result.messages[0];
+  });
+}
+
 function advanceReceiptPositions(
   database,
   { conversationId, userId, messageId, positions, primaryPosition },
@@ -333,7 +474,15 @@ function isRecordNotFoundError(error) {
 }
 
 function isForeignKeyError(error) {
-  return error !== null && typeof error === 'object' && error.code === 'P2003';
+  if (error === null || typeof error !== 'object') {
+    return false;
+  }
+
+  return (
+    error.code === 'P2003' ||
+    error.code === '23503' ||
+    (error.code === 'P2010' && error.meta?.driverAdapterError?.cause?.originalCode === '23503')
+  );
 }
 
 export const messagesRepository = createMessagesRepository();

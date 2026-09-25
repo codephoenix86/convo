@@ -98,6 +98,20 @@ npm run demo
 
 Set `DEMO_BASE_URL` to target another API origin, for example `DEMO_BASE_URL=http://127.0.0.1:4000 npm run demo`. Each run creates uniquely named Alice, Bob, and Charlie users, then demonstrates canonical direct-conversation reuse, a rejected group-role mutation, direct and group realtime sends/acknowledgements, a persisted read receipt, cross-transport message idempotency, reconnect room restoration, and REST recovery of a message missed while offline. Successful output ends with `Demo completed successfully.` The records are intentionally retained for inspection; use a disposable database when repeatable cleanup is important.
 
+### Message delivery latency baseline
+
+With a migrated API running, measure sender-to-recipient message delivery latency with:
+
+```bash
+npm run benchmark:message-latency
+```
+
+The benchmark creates two isolated users and a direct conversation, connects both over WebSocket, discards 10 warm-up sends, and measures 100 sends. Each timing starts immediately before `message:send` and ends when the recipient receives the matching persisted `message:new` event. The result reports p50, p95, p99, minimum, maximum, and throughput.
+
+Set `MESSAGE_LATENCY_IN_FLIGHT` to keep multiple sends outstanding on the same sender socket; it defaults to `1` and cannot exceed the measured sample count. For example, run `MESSAGE_LATENCY_IN_FLIGHT=5 npm run benchmark:message-latency` to maintain up to five outstanding sends. This still uses exactly two socket clients and does not simulate five concurrent users.
+
+Set `MESSAGE_LATENCY_BASE_URL`, `MESSAGE_LATENCY_SAMPLES`, `MESSAGE_LATENCY_WARMUP_SAMPLES`, or `MESSAGE_LATENCY_TIMEOUT_MS` to override the other defaults. Warm-up and measured sends may total at most 120 so the run stays within the default per-user message rate limit. This is an environment-specific short-burst measurement, not a sustained-capacity test or a CI latency threshold. Each run retains its users, conversation, and messages, so use a disposable database when cleanup matters.
+
 ### Two-instance scaling proof
 
 With Redis running and `TEST_DATABASE_URL` pointing to a disposable PostgreSQL database whose name ends in `_test`, run:
@@ -197,68 +211,71 @@ Socket events are live notifications, not a durable replay log. Whenever `sessio
 
 ## Commands
 
-| Command                     | Purpose                                                |
-| --------------------------- | ------------------------------------------------------ |
-| `npm run dev`               | Start with Node's watch mode.                          |
-| `npm start`                 | Start the server normally.                             |
-| `npm run demo`              | Exercise the running API and realtime lifecycle.       |
-| `npm test`                  | Run unit, HTTP, and realtime tests once.               |
-| `npm run test:unit`         | Run unit tests.                                        |
-| `npm run test:integration`  | Run HTTP, configuration, and lifecycle contract tests. |
-| `npm run test:acceptance`   | Run the realtime messaging lifecycle acceptance flow.  |
-| `npm run test:database`     | Migrate and test against an isolated PostgreSQL DB.    |
-| `npm run test:scaling`      | Run the real two-instance Redis/PostgreSQL proof.      |
-| `npm run test:release`      | Run the complete local production release gate.        |
-| `npm run lint`              | Check JavaScript with ESLint.                          |
-| `npm run format:check`      | Check formatting with Prettier.                        |
-| `npm run db:generate`       | Regenerate Prisma Client.                              |
-| `npm run db:validate`       | Validate the Prisma schema.                            |
-| `npm run db:migrate`        | Create/apply a development migration.                  |
-| `npm run db:migrate:deploy` | Apply committed migrations.                            |
-| `npm run db:migrate:status` | Show migration status.                                 |
-| `npm run db:seed`           | Idempotently load realistic development data.          |
-| `npm run db:studio`         | Open Prisma Studio.                                    |
+| Command                             | Purpose                                                |
+| ----------------------------------- | ------------------------------------------------------ |
+| `npm run dev`                       | Start with Node's watch mode.                          |
+| `npm start`                         | Start the server normally.                             |
+| `npm run demo`                      | Exercise the running API and realtime lifecycle.       |
+| `npm run benchmark:message-latency` | Measure low-load end-to-end delivery percentiles.      |
+| `npm test`                          | Run unit, HTTP, and realtime tests once.               |
+| `npm run test:unit`                 | Run unit tests.                                        |
+| `npm run test:integration`          | Run HTTP, configuration, and lifecycle contract tests. |
+| `npm run test:acceptance`           | Run the realtime messaging lifecycle acceptance flow.  |
+| `npm run test:database`             | Migrate and test against an isolated PostgreSQL DB.    |
+| `npm run test:scaling`              | Run the real two-instance Redis/PostgreSQL proof.      |
+| `npm run test:release`              | Run the complete local production release gate.        |
+| `npm run lint`                      | Check JavaScript with ESLint.                          |
+| `npm run format:check`              | Check formatting with Prettier.                        |
+| `npm run db:generate`               | Regenerate Prisma Client.                              |
+| `npm run db:validate`               | Validate the Prisma schema.                            |
+| `npm run db:migrate`                | Create/apply a development migration.                  |
+| `npm run db:migrate:deploy`         | Apply committed migrations.                            |
+| `npm run db:migrate:status`         | Show migration status.                                 |
+| `npm run db:seed`                   | Idempotently load realistic development data.          |
+| `npm run db:studio`                 | Open Prisma Studio.                                    |
 
 Database-backed tests are intentionally separate from the fast default suite. Create a disposable database whose name ends in `_test`, set `TEST_DATABASE_URL` in `.env`, and run `npm run test:database`. The safety wrapper refuses to use the same database as `DATABASE_URL`, applies committed migrations, and clears only that isolated database between cases.
 
 ## Environment variables
 
-| Variable                              | Purpose                                                     |
-| ------------------------------------- | ----------------------------------------------------------- |
-| `NODE_ENV`                            | `development`, `test`, or `production`.                     |
-| `HOST`                                | HTTP bind address.                                          |
-| `PORT`                                | HTTP port from 1 through 65535.                             |
-| `TRUST_PROXY_HOPS`                    | Exact trusted reverse-proxy hop count; defaults to `0`.     |
-| `LOG_LEVEL`                           | Pino log threshold.                                         |
-| `DATABASE_URL`                        | PostgreSQL connection URL.                                  |
-| `TEST_DATABASE_URL`                   | Disposable PostgreSQL database used by tests.               |
-| `DATABASE_CONNECTION_TIMEOUT_MS`      | Database connection timeout from 100–30000ms.               |
-| `REDIS_URL`                           | Redis or TLS-enabled `rediss` connection URL.               |
-| `REDIS_CONNECT_TIMEOUT_MS`            | Redis connection timeout from 100–30000ms.                  |
-| `REDIS_COMMAND_TIMEOUT_MS`            | Redis command timeout from 100–30000ms.                     |
-| `REDIS_RECONNECT_MAX_DELAY_MS`        | Maximum Redis reconnect delay from 100–30000ms.             |
-| `SOCKET_IO_REDIS_CHANNEL_PREFIX`      | Isolates this deployment's Socket.IO Pub/Sub channels.      |
-| `ACCESS_TOKEN_SECRET`                 | Secret of at least 32 characters for JWTs.                  |
-| `ACCESS_TOKEN_TTL_SECONDS`            | Access-token lifetime from 60–3600 seconds.                 |
-| `REFRESH_TOKEN_TTL_DAYS`              | Refresh-session lifetime from 1–90 days.                    |
-| `JWT_ISSUER`                          | Expected access-token issuer.                               |
-| `JWT_AUDIENCE`                        | Expected access-token audience.                             |
-| `CLIENT_ORIGINS`                      | Comma-separated browser origin allowlist.                   |
-| `ATTACHMENT_STORAGE_DRIVER`           | Attachment backend: `local`, `s3`, or `cloudinary`.         |
-| `LOCAL_STORAGE_DIRECTORY`             | Local attachment directory (default `./storage`).           |
-| `LOCAL_STORAGE_SIGNING_SECRET`        | Optional local URL secret; defaults to access-token secret. |
-| `LOCAL_STORAGE_URL_TTL_SECONDS`       | Local signed-URL lifetime from 60–900 seconds.              |
-| `OBJECT_STORAGE_REGION`               | S3-compatible bucket region.                                |
-| `OBJECT_STORAGE_BUCKET`               | Private attachment bucket name.                             |
-| `OBJECT_STORAGE_ENDPOINT`             | Optional HTTP(S) endpoint for R2/MinIO/etc.                 |
-| `OBJECT_STORAGE_ACCESS_KEY_ID`        | Object-storage access-key identifier.                       |
-| `OBJECT_STORAGE_SECRET_ACCESS_KEY`    | Object-storage secret access key.                           |
-| `OBJECT_STORAGE_FORCE_PATH_STYLE`     | Use path-style bucket addressing.                           |
-| `OBJECT_STORAGE_PRESIGN_TTL_SECONDS`  | Signed-upload lifetime from 60–900 seconds.                 |
-| `CLOUDINARY_CLOUD_NAME`               | Cloudinary product-environment cloud name.                  |
-| `CLOUDINARY_API_KEY`                  | Cloudinary public API key.                                  |
-| `CLOUDINARY_API_SECRET`               | Cloudinary server-only API secret.                          |
-| `CLOUDINARY_DOWNLOAD_URL_TTL_SECONDS` | Cloudinary download lifetime from 60–900 seconds.           |
+| Variable                              | Purpose                                                      |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `NODE_ENV`                            | `development`, `test`, or `production`.                      |
+| `HOST`                                | HTTP bind address.                                           |
+| `PORT`                                | HTTP port from 1 through 65535.                              |
+| `TRUST_PROXY_HOPS`                    | Exact trusted reverse-proxy hop count; defaults to `0`.      |
+| `LOG_LEVEL`                           | Pino log threshold.                                          |
+| `DATABASE_URL`                        | PostgreSQL connection URL.                                   |
+| `TEST_DATABASE_URL`                   | Disposable PostgreSQL database used by tests.                |
+| `DATABASE_CONNECTION_TIMEOUT_MS`      | Database connection timeout from 100–30000ms.                |
+| `DATABASE_POOL_MAX`                   | Maximum PostgreSQL connections per API process; default `4`. |
+| `DATABASE_SLOW_QUERY_MS`              | Slow-query logging threshold; `0` disables it by default.    |
+| `REDIS_URL`                           | Redis or TLS-enabled `rediss` connection URL.                |
+| `REDIS_CONNECT_TIMEOUT_MS`            | Redis connection timeout from 100–30000ms.                   |
+| `REDIS_COMMAND_TIMEOUT_MS`            | Redis command timeout from 100–30000ms.                      |
+| `REDIS_RECONNECT_MAX_DELAY_MS`        | Maximum Redis reconnect delay from 100–30000ms.              |
+| `SOCKET_IO_REDIS_CHANNEL_PREFIX`      | Isolates this deployment's Socket.IO Pub/Sub channels.       |
+| `ACCESS_TOKEN_SECRET`                 | Secret of at least 32 characters for JWTs.                   |
+| `ACCESS_TOKEN_TTL_SECONDS`            | Access-token lifetime from 60–3600 seconds.                  |
+| `REFRESH_TOKEN_TTL_DAYS`              | Refresh-session lifetime from 1–90 days.                     |
+| `JWT_ISSUER`                          | Expected access-token issuer.                                |
+| `JWT_AUDIENCE`                        | Expected access-token audience.                              |
+| `CLIENT_ORIGINS`                      | Comma-separated browser origin allowlist.                    |
+| `ATTACHMENT_STORAGE_DRIVER`           | Attachment backend: `local`, `s3`, or `cloudinary`.          |
+| `LOCAL_STORAGE_DIRECTORY`             | Local attachment directory (default `./storage`).            |
+| `LOCAL_STORAGE_SIGNING_SECRET`        | Optional local URL secret; defaults to access-token secret.  |
+| `LOCAL_STORAGE_URL_TTL_SECONDS`       | Local signed-URL lifetime from 60–900 seconds.               |
+| `OBJECT_STORAGE_REGION`               | S3-compatible bucket region.                                 |
+| `OBJECT_STORAGE_BUCKET`               | Private attachment bucket name.                              |
+| `OBJECT_STORAGE_ENDPOINT`             | Optional HTTP(S) endpoint for R2/MinIO/etc.                  |
+| `OBJECT_STORAGE_ACCESS_KEY_ID`        | Object-storage access-key identifier.                        |
+| `OBJECT_STORAGE_SECRET_ACCESS_KEY`    | Object-storage secret access key.                            |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE`     | Use path-style bucket addressing.                            |
+| `OBJECT_STORAGE_PRESIGN_TTL_SECONDS`  | Signed-upload lifetime from 60–900 seconds.                  |
+| `CLOUDINARY_CLOUD_NAME`               | Cloudinary product-environment cloud name.                   |
+| `CLOUDINARY_API_KEY`                  | Cloudinary public API key.                                   |
+| `CLOUDINARY_API_SECRET`               | Cloudinary server-only API secret.                           |
+| `CLOUDINARY_DOWNLOAD_URL_TTL_SECONDS` | Cloudinary download lifetime from 60–900 seconds.            |
 
 The `OBJECT_STORAGE_*` region, bucket, and credential variables are required only for `s3`; the `CLOUDINARY_*` identity variables are required only for `cloudinary`. Local storage is intended for a single API instance with persistent disk; use S3-compatible storage or Cloudinary when instances need to share attachment bytes.
 

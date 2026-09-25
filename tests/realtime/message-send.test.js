@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { io as createClient } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NotFoundError } from '../../src/lib/errors.js';
 import { createMessagesService } from '../../src/modules/messages/messages.service.js';
 import { createConversationRoomCoordinator } from '../../src/realtime/conversation-rooms.js';
 import { createRealtimeMessageEvents } from '../../src/realtime/message-events.js';
@@ -61,6 +62,10 @@ describe('message:send', () => {
     };
     messageRepository = {
       create: vi.fn(async (input) => {
+        if (![senderId, recipientId].includes(input.senderId)) {
+          throw new NotFoundError('Conversation not found');
+        }
+
         if (storedMessage) {
           return { message: storedMessage, created: false };
         }
@@ -176,7 +181,7 @@ describe('message:send', () => {
     expect(receivedEvents).toHaveLength(1);
   });
 
-  it('rechecks conversation membership for every event', async () => {
+  it('reports the repository membership rejection for every event', async () => {
     const outsider = await connectClient('outsider-token');
 
     const acknowledgement = await outsider.timeout(1000).emitWithAck('message:send', {
@@ -192,7 +197,7 @@ describe('message:send', () => {
         message: 'Conversation not found',
       },
     });
-    expect(messageRepository.create).not.toHaveBeenCalled();
+    expect(messageRepository.create).toHaveBeenCalledOnce();
     expect(log.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'socket_event_failed',

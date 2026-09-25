@@ -73,6 +73,7 @@ const environmentSchema = z
       .min(1, 'is required')
       .refine(isPostgresUrl, 'must be a valid PostgreSQL URL'),
     DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(5000),
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(4),
     REDIS_URL: z
       .string({ error: 'is required' })
       .trim()
