@@ -1,6 +1,10 @@
 import { getConversationRoom, getUserRoom } from './rooms.js';
 
-export function createConversationRoomCoordinator() {
+const noOpPresenceRefresh = async () => {};
+
+export function createConversationRoomCoordinator({
+  refreshPresenceSnapshots = noOpPresenceRefresh,
+} = {}) {
   let io;
   const pendingSocketsByUser = new Map();
   const userOperations = new Map();
@@ -63,12 +67,14 @@ export function createConversationRoomCoordinator() {
           }),
         ),
       );
+
+      await refreshPresenceSnapshots({ conversationId, userIds });
     },
 
-    memberRemoved({ conversationId, userId }) {
+    async memberRemoved({ conversationId, userId }) {
       const socketServer = requireSocketServer(io);
 
-      return runForUser(userId, () => {
+      await runForUser(userId, () => {
         updatePendingSockets(userId, (socket) => {
           socket.data.conversationIds = socket.data.conversationIds.filter(
             (id) => id !== conversationId,
@@ -79,6 +85,8 @@ export function createConversationRoomCoordinator() {
           .in(getUserRoom(userId))
           .socketsLeave(getConversationRoom(conversationId));
       });
+
+      await refreshPresenceSnapshots({ conversationId, userIds: [userId] });
     },
   };
 

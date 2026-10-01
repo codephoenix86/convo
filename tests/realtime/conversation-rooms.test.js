@@ -19,6 +19,7 @@ describe('Socket.IO conversation rooms', () => {
   let httpServer;
   let socketServer;
   let roomCoordinator;
+  let refreshPresenceSnapshots;
   let membershipRepository;
   let tokenVerifier;
   let log;
@@ -41,7 +42,8 @@ describe('Socket.IO conversation rooms', () => {
       warn: vi.fn(),
     };
     clients = [];
-    roomCoordinator = createConversationRoomCoordinator();
+    refreshPresenceSnapshots = vi.fn();
+    roomCoordinator = createConversationRoomCoordinator({ refreshPresenceSnapshots });
     socketServer = createSocketServer(httpServer, {
       allowedOrigins: [CLIENT_ORIGIN],
       accessTokenVerifier: tokenVerifier,
@@ -132,6 +134,10 @@ describe('Socket.IO conversation rooms', () => {
     expect(roomMembers(firstConversationId)).toEqual(
       new Set([firstDevice.id, secondDevice.id, existingMember.id]),
     );
+    expect(refreshPresenceSnapshots).toHaveBeenLastCalledWith({
+      conversationId: firstConversationId,
+      userIds: [firstUserId],
+    });
 
     await roomCoordinator.memberRemoved({
       conversationId: firstConversationId,
@@ -140,6 +146,11 @@ describe('Socket.IO conversation rooms', () => {
 
     await waitFor(() => roomMembers(firstConversationId)?.size === 1);
     expect(roomMembers(firstConversationId)).toEqual(new Set([existingMember.id]));
+    expect(refreshPresenceSnapshots).toHaveBeenLastCalledWith({
+      conversationId: firstConversationId,
+      userIds: [firstUserId],
+    });
+    expect(refreshPresenceSnapshots).toHaveBeenCalledTimes(2);
   });
 
   it('serializes a concurrent removal behind room initialization', async () => {

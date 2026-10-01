@@ -1,3 +1,5 @@
+import { getConversationRoom, getUserRoom } from './rooms.js';
+
 const CONVERSATION_ROOM_PREFIX = 'conversation:';
 
 export function createPresenceCoordinator({ now = Date.now } = {}) {
@@ -60,29 +62,43 @@ export function createPresenceCoordinator({ now = Date.now } = {}) {
       return createCounts(userId);
     },
 
-    sendSnapshot(socket) {
-      const namespace = requireSocketServer(io).of('/');
-      const visibleUserIds = new Set();
+    sendSnapshot,
 
-      for (const roomName of getConversationRooms(socket)) {
-        for (const socketId of namespace.adapter.rooms.get(roomName) ?? []) {
-          const visibleUserId = namespace.sockets.get(socketId)?.data.user.id;
+    async refreshSnapshots({ conversationId, userIds = [] }) {
+      const targetRooms = [
+        getConversationRoom(conversationId),
+        ...[...new Set(userIds)].map(getUserRoom),
+      ];
+      const sockets = await requireSocketServer(io).in(targetRooms).fetchSockets();
 
-          if (visibleUserId && visibleUserId !== socket.data.user.id && users.has(visibleUserId)) {
-            visibleUserIds.add(visibleUserId);
-          }
-        }
-      }
+      await Promise.all(sockets.map((socket) => sendSnapshot(socket)));
 
-      const items = [...visibleUserIds]
-        .sort()
-        .map((userId) => createPresenceState(userId, true, users.get(userId).onlineSince));
-
-      socket.emit('presence:snapshot', { items });
-
-      return items;
+      return sockets.length;
     },
   };
+
+  function sendSnapshot(socket) {
+    const namespace = requireSocketServer(io).of('/');
+    const visibleUserIds = new Set();
+
+    for (const roomName of getConversationRooms(socket)) {
+      for (const socketId of namespace.adapter.rooms.get(roomName) ?? []) {
+        const visibleUserId = namespace.sockets.get(socketId)?.data.user.id;
+
+        if (visibleUserId && visibleUserId !== socket.data.user.id && users.has(visibleUserId)) {
+          visibleUserIds.add(visibleUserId);
+        }
+      }
+    }
+
+    const items = [...visibleUserIds]
+      .sort()
+      .map((userId) => createPresenceState(userId, true, users.get(userId).onlineSince));
+
+    socket.emit('presence:snapshot', { items });
+
+    return items;
+  }
 
   function createCounts(userId) {
     return {

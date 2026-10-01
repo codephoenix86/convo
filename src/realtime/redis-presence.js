@@ -1,4 +1,5 @@
 import { logger } from '../config/logger.js';
+import { getConversationRoom, getUserRoom } from './rooms.js';
 
 const CONVERSATION_ROOM_PREFIX = 'conversation:';
 const DEFAULT_PRESENCE_TTL_MS = 30_000;
@@ -145,24 +146,38 @@ export function createRedisPresenceCoordinator({
       return result.counts;
     },
 
-    async sendSnapshot(socket) {
-      const conversationIds = getConversationRooms(socket).map((roomName) =>
-        roomName.slice(CONVERSATION_ROOM_PREFIX.length),
-      );
-      const memberIds = await membershipRepository.listMemberIdsForConversations(conversationIds);
-      const visibleUserIds = [...new Set(memberIds)].filter(
-        (userId) => userId !== socket.data.user.id,
-      );
-      const onlineUsers = await store.getOnline(visibleUserIds);
-      const items = onlineUsers
-        .sort((first, second) => first.userId.localeCompare(second.userId))
-        .map(({ userId, onlineSince }) => createPresenceState(userId, true, onlineSince));
+    sendSnapshot,
 
-      socket.emit('presence:snapshot', { items });
+    async refreshSnapshots({ conversationId, userIds = [] }) {
+      const targetRooms = [
+        getConversationRoom(conversationId),
+        ...[...new Set(userIds)].map(getUserRoom),
+      ];
+      const sockets = await requireSocketServer(io).in(targetRooms).fetchSockets();
 
-      return items;
+      await Promise.all(sockets.map(sendSnapshot));
+
+      return sockets.length;
     },
   };
+
+  async function sendSnapshot(socket) {
+    const conversationIds = getConversationRooms(socket).map((roomName) =>
+      roomName.slice(CONVERSATION_ROOM_PREFIX.length),
+    );
+    const memberIds = await membershipRepository.listMemberIdsForConversations(conversationIds);
+    const visibleUserIds = [...new Set(memberIds)].filter(
+      (userId) => userId !== socket.data.user.id,
+    );
+    const onlineUsers = await store.getOnline(visibleUserIds);
+    const items = onlineUsers
+      .sort((first, second) => first.userId.localeCompare(second.userId))
+      .map(({ userId, onlineSince }) => createPresenceState(userId, true, onlineSince));
+
+    socket.emit('presence:snapshot', { items });
+
+    return items;
+  }
 
   function replaceHeartbeat(socket) {
     clearSocketHeartbeat(socket.id);

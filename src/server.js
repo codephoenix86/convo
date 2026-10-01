@@ -18,15 +18,17 @@ import { createSocketRedisAdapter } from './realtime/socket-redis-adapter.js';
 import { createSocketServer } from './realtime/socket.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
-const conversationRooms = createConversationRoomCoordinator();
-const conversations = createConversationsService(conversationsRepository, {
-  membershipEvents: conversationRooms,
-});
 const messageEvents = createRealtimeMessageEvents();
 const rateLimiters = createApplicationRateLimiters({ redisClient: redis });
 const presenceCoordinator = createRedisPresenceCoordinator({
   redisClient: redis,
   membershipRepository: conversationsRepository,
+});
+const conversationRooms = createConversationRoomCoordinator({
+  refreshPresenceSnapshots: (event) => presenceCoordinator.refreshSnapshots(event),
+});
+const conversations = createConversationsService(conversationsRepository, {
+  membershipEvents: conversationRooms,
 });
 const typingCoordinator = createRedisTypingCoordinator({ redisClient: redis });
 const socketRedisAdapter = createSocketRedisAdapter({ redisClient: redis });

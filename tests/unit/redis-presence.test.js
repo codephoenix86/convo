@@ -101,6 +101,60 @@ describe('Redis presence coordinator', () => {
       },
     });
   });
+
+  it('refreshes snapshots for conversation members and directly affected users', async () => {
+    const redisClient = {
+      eval: vi.fn(),
+      mGet: vi.fn().mockResolvedValue([String(timestamp)]),
+    };
+    const membershipRepository = {
+      listMemberIdsForConversations: vi.fn().mockResolvedValue([firstUserId, secondUserId]),
+    };
+    const firstSocket = createSocket('socket-1', firstUserId);
+    const secondSocket = createSocket('socket-2', secondUserId);
+    const fetchSockets = vi.fn().mockResolvedValue([firstSocket, secondSocket]);
+    const io = {
+      in: vi.fn().mockReturnValue({ fetchSockets }),
+    };
+    const coordinator = createRedisPresenceCoordinator({
+      redisClient,
+      membershipRepository,
+      scheduleHeartbeat: vi.fn(),
+    });
+
+    coordinator.attach(io);
+
+    await expect(
+      coordinator.refreshSnapshots({
+        conversationId,
+        userIds: [firstUserId, firstUserId],
+      }),
+    ).resolves.toBe(2);
+
+    expect(io.in).toHaveBeenCalledWith([
+      getConversationRoom(conversationId),
+      getUserRoom(firstUserId),
+    ]);
+    expect(fetchSockets).toHaveBeenCalledOnce();
+    expect(firstSocket.emit).toHaveBeenCalledWith('presence:snapshot', {
+      items: [
+        {
+          userId: secondUserId,
+          isOnline: true,
+          changedAt: '2026-09-15T10:00:00.000Z',
+        },
+      ],
+    });
+    expect(secondSocket.emit).toHaveBeenCalledWith('presence:snapshot', {
+      items: [
+        {
+          userId: firstUserId,
+          isOnline: true,
+          changedAt: '2026-09-15T10:00:00.000Z',
+        },
+      ],
+    });
+  });
 });
 
 function createSocket(id, userId) {
