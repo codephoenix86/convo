@@ -35,8 +35,7 @@ describe('Socket.IO Redis adapter lifecycle', () => {
     expect(publisher.connect).toHaveBeenCalledOnce();
     expect(subscriber.connect).toHaveBeenCalledOnce();
     expect(adapterFactory).toHaveBeenCalledWith(publisher, subscriber, {
-      channelPrefix: 'convo:test',
-      subscriptionMode: 'dynamic',
+      key: 'convo:test',
     });
     expect(io.adapter).toHaveBeenCalledWith(adapterConstructor);
     expect(lifecycle.isReady()).toBe(true);

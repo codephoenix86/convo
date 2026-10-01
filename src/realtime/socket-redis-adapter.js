@@ -1,4 +1,4 @@
-import { createShardedAdapter } from '@socket.io/redis-adapter';
+import { createAdapter } from '@socket.io/redis-adapter';
 
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
@@ -6,7 +6,7 @@ import { closeRedisClient, connectRedisClient, observeRedisClient } from '../con
 
 export function createSocketRedisAdapter({
   redisClient,
-  adapterFactory = createShardedAdapter,
+  adapterFactory = createAdapter,
   channelPrefix = env.SOCKET_IO_REDIS_CHANNEL_PREFIX,
   log = logger,
 } = {}) {
@@ -69,8 +69,7 @@ export function createSocketRedisAdapter({
 
     io.adapter(
       adapterFactory(publisher, subscriber, {
-        channelPrefix,
-        subscriptionMode: 'dynamic',
+        key: channelPrefix,
       }),
     );
     installed = true;
