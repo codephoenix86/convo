@@ -162,8 +162,8 @@ export function createRedisPresenceCoordinator({
   };
 
   async function sendSnapshot(socket) {
-    const conversationIds = getConversationRooms(socket).map((roomName) =>
-      roomName.slice(CONVERSATION_ROOM_PREFIX.length),
+    const conversationIds = await membershipRepository.listConversationIdsForUser(
+      socket.data.user.id,
     );
     const memberIds = await membershipRepository.listMemberIdsForConversations(conversationIds);
     const visibleUserIds = [...new Set(memberIds)].filter(
@@ -328,9 +328,12 @@ function requireRedisClient(redisClient) {
 function requireMembershipRepository(membershipRepository) {
   if (
     !membershipRepository ||
+    typeof membershipRepository.listConversationIdsForUser !== 'function' ||
     typeof membershipRepository.listMemberIdsForConversations !== 'function'
   ) {
-    throw new TypeError('membershipRepository must support listMemberIdsForConversations');
+    throw new TypeError(
+      'membershipRepository must support listConversationIdsForUser and listMemberIdsForConversations',
+    );
   }
 }
 

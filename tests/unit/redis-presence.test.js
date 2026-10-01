@@ -53,6 +53,7 @@ describe('Redis presence coordinator', () => {
       mGet: vi.fn().mockResolvedValue([String(timestamp), null]),
     };
     const membershipRepository = {
+      listConversationIdsForUser: vi.fn().mockResolvedValue([conversationId]),
       listMemberIdsForConversations: vi
         .fn()
         .mockResolvedValue([firstUserId, secondUserId, hiddenUserId]),
@@ -87,6 +88,7 @@ describe('Redis presence coordinator', () => {
         changedAt: '2026-09-15T10:00:00.000Z',
       },
     ]);
+    expect(membershipRepository.listConversationIdsForUser).toHaveBeenCalledWith(firstUserId);
     expect(membershipRepository.listMemberIdsForConversations).toHaveBeenCalledWith([
       conversationId,
     ]);
@@ -108,10 +110,11 @@ describe('Redis presence coordinator', () => {
       mGet: vi.fn().mockResolvedValue([String(timestamp)]),
     };
     const membershipRepository = {
+      listConversationIdsForUser: vi.fn().mockResolvedValue([conversationId]),
       listMemberIdsForConversations: vi.fn().mockResolvedValue([firstUserId, secondUserId]),
     };
-    const firstSocket = createSocket('socket-1', firstUserId);
-    const secondSocket = createSocket('socket-2', secondUserId);
+    const firstSocket = createSocket('socket-1', firstUserId, []);
+    const secondSocket = createSocket('socket-2', secondUserId, []);
     const fetchSockets = vi.fn().mockResolvedValue([firstSocket, secondSocket]);
     const io = {
       in: vi.fn().mockReturnValue({ fetchSockets }),
@@ -136,6 +139,8 @@ describe('Redis presence coordinator', () => {
       getUserRoom(firstUserId),
     ]);
     expect(fetchSockets).toHaveBeenCalledOnce();
+    expect(membershipRepository.listConversationIdsForUser).toHaveBeenCalledWith(firstUserId);
+    expect(membershipRepository.listConversationIdsForUser).toHaveBeenCalledWith(secondUserId);
     expect(firstSocket.emit).toHaveBeenCalledWith('presence:snapshot', {
       items: [
         {
@@ -157,13 +162,13 @@ describe('Redis presence coordinator', () => {
   });
 });
 
-function createSocket(id, userId) {
+function createSocket(id, userId, conversationIds = [conversationId]) {
   const outbound = { emit: vi.fn() };
 
   return {
     id,
     data: { user: { id: userId } },
-    rooms: new Set([id, getUserRoom(userId), getConversationRoom(conversationId)]),
+    rooms: new Set([id, getUserRoom(userId), ...conversationIds.map(getConversationRoom)]),
     to: vi.fn().mockReturnValue(outbound),
     emit: vi.fn(),
     outbound,

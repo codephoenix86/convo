@@ -26,6 +26,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
+    "db:flush": "node scripts/flush-databases.js",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },
